@@ -1,0 +1,29 @@
+# # ApacheWatch Configuration
+
+# server_name: "my-server"
+
+# # Apache log paths - adjust for your system
+# apache:
+#   error_log: "/var/log/apache2/error.log"
+#   access_log: "/var/log/apache2/access.log"
+
+# # Where to store collected data
+# data_file: "./data/apachewatch.json"
+
+# # Web server settings
+# web:
+#   host: "0.0.0.0"
+#   port: 8080
+
+# configuration for my TEST fake Apache logs
+server_name: "local-dev"
+
+apache:
+  error_log: "./logs/error.log"
+  access_log: "./logs/access.log"
+
+data_file: "./data/apachewatch.json"
+
+web:
+  host: "127.0.0.1"
+  port: 8080

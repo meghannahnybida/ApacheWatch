@@ -1,0 +1,27 @@
+version: '3.8'
+
+services:
+  apachewatch:
+    build: .
+    container_name: apachewatch
+    ports:
+      - "8080:8080"
+    volumes:
+      # Mount your code for live editing (development mode)
+      - .:/app
+      # Mount Apache logs (read-only) - adjust these paths for your system
+      - /var/log/apache2:/logs:ro
+      # Persist data outside container
+      - ./data:/app/data
+    environment:
+      - FLASK_ENV=development
+      - FLASK_DEBUG=1
+    restart: unless-stopped
+    # Override CMD to use Flask's auto-reload
+    command: python apachewatch.py
+
+# For macOS/Windows users who don't have Apache locally:
+# Comment out the /var/log/apache2 mount above and create a dummy log:
+#   mkdir -p logs
+#   touch logs/error.log
+# Then use: - ./logs:/logs:ro

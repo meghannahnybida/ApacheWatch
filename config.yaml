@@ -25,5 +25,5 @@ apache:
 data_file: "./data/apachewatch.json"
 
 web:
-  host: "127.0.0.1"
+  host: "0.0.0.0"  # Use 0.0.0.0 for Docker, or 127.0.0.1 for local-only
   port: 8080

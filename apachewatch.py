@@ -6,7 +6,7 @@ A minimal, easy-to-understand implementation.
 
 import os
 import re
-import json
+import sqlite3
 import psutil
 import yaml
 from datetime import datetime
@@ -29,7 +29,7 @@ def load_config(config_path="config.yaml"):
             "error_log": "/var/log/apache2/error.log",
             "access_log": "/var/log/apache2/access.log"
         },
-        "data_file": "./data/apachewatch.json",
+        "database": "./data/apachewatch.db",
         "web": {"host": "0.0.0.0", "port": 8080}
     }
 
@@ -115,31 +115,104 @@ def parse_error_log(log_path, max_lines=100):
     return entries
 
 # =============================================================================
-# DATA STORAGE (Simple JSON file)
+# DATA STORAGE (SQLite Database)
 # =============================================================================
 
-def load_data(data_file):
-    """Load stored data from JSON file."""
-    if os.path.exists(data_file):
-        with open(data_file) as f:
-            return json.load(f)
-    return {"metrics_history": [], "last_updated": None}
-
-def save_data(data_file, data):
-    """Save data to JSON file."""
+def init_database(db_path):
+    """Initialize the SQLite database and create tables if they don't exist."""
     # Ensure directory exists
-    Path(data_file).parent.mkdir(parents=True, exist_ok=True)
-    with open(data_file, 'w') as f:
-        json.dump(data, f, indent=2)
+    Path(db_path).parent.mkdir(parents=True, exist_ok=True)
+    
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    
+    # Create metrics table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS metrics (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp TEXT NOT NULL,
+            cpu_percent REAL,
+            memory_percent REAL,
+            memory_used_gb REAL,
+            memory_total_gb REAL,
+            disk_percent REAL,
+            disk_used_gb REAL,
+            disk_total_gb REAL
+        )
+    ''')
+    
+    # Create index on timestamp for faster queries
+    cursor.execute('''
+        CREATE INDEX IF NOT EXISTS idx_timestamp ON metrics(timestamp)
+    ''')
+    
+    conn.commit()
+    conn.close()
 
-def add_metrics_snapshot(data_file, metrics, max_history=1000):
-    """Add a metrics snapshot to history."""
-    data = load_data(data_file)
-    data["metrics_history"].append(metrics)
-    # Keep only last N entries
-    data["metrics_history"] = data["metrics_history"][-max_history:]
-    data["last_updated"] = datetime.now().isoformat()
-    save_data(data_file, data)
+def add_metrics_snapshot(db_path, metrics):
+    """Add a metrics snapshot to the database."""
+    init_database(db_path)
+    
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    
+    cursor.execute('''
+        INSERT INTO metrics (
+            timestamp, cpu_percent, 
+            memory_percent, memory_used_gb, memory_total_gb,
+            disk_percent, disk_used_gb, disk_total_gb
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    ''', (
+        metrics['timestamp'],
+        metrics['cpu_percent'],
+        metrics['memory']['percent'],
+        metrics['memory']['used_gb'],
+        metrics['memory']['total_gb'],
+        metrics['disk']['percent'],
+        metrics['disk']['used_gb'],
+        metrics['disk']['total_gb']
+    ))
+    
+    conn.commit()
+    conn.close()
+
+def get_metrics_history(db_path, limit=1000):
+    """Get recent metrics history from the database."""
+    init_database(db_path)
+    
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row  # Enable column access by name
+    cursor = conn.cursor()
+    
+    cursor.execute('''
+        SELECT * FROM metrics 
+        ORDER BY timestamp DESC 
+        LIMIT ?
+    ''', (limit,))
+    
+    rows = cursor.fetchall()
+    conn.close()
+    
+    # Convert to list of dictionaries
+    history = []
+    for row in rows:
+        history.append({
+            'timestamp': row['timestamp'],
+            'cpu_percent': row['cpu_percent'],
+            'memory': {
+                'percent': row['memory_percent'],
+                'used_gb': row['memory_used_gb'],
+                'total_gb': row['memory_total_gb']
+            },
+            'disk': {
+                'percent': row['disk_percent'],
+                'used_gb': row['disk_used_gb'],
+                'total_gb': row['disk_total_gb']
+            }
+        })
+    
+    # Reverse to get chronological order (oldest first)
+    return list(reversed(history))
 
 # =============================================================================
 # FLASK APP
@@ -155,7 +228,7 @@ def dashboard():
     logs = parse_error_log(config["apache"]["error_log"])
     
     # Save metrics snapshot
-    add_metrics_snapshot(config["data_file"], metrics)
+    add_metrics_snapshot(config["database"], metrics)
     
     return render_template(
         "dashboard.html",
@@ -177,8 +250,11 @@ def api_logs():
 @app.route("/api/history")
 def api_history():
     """Get metrics history."""
-    data = load_data(config["data_file"])
-    return jsonify(data)
+    history = get_metrics_history(config["database"], limit=1000)
+    return jsonify({
+        "metrics_history": history,
+        "count": len(history)
+    })
 
 # =============================================================================
 # MAIN

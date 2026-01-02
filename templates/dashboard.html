@@ -26,6 +26,10 @@
         .level-warn { background: #fef3c7; color: #d97706; }
         .level-info { background: #dbeafe; color: #2563eb; }
         .level-notice { background: #e0e7ff; color: #4f46e5; }
+        .filter-buttons { margin-bottom: 15px; display: flex; gap: 8px; flex-wrap: wrap; }
+        .filter-btn { padding: 6px 12px; background: #f3f4f6; border: 1px solid #d1d5db; border-radius: 4px; text-decoration: none; color: #374151; font-size: 12px; transition: all 0.2s; }
+        .filter-btn:hover { background: #e5e7eb; }
+        .filter-btn.active { background: #3b82f6; color: white; border-color: #3b82f6; }
         .refresh-note { text-align: center; color: #999; font-size: 12px; margin-top: 20px; }
     </style>
 </head>
@@ -56,6 +60,13 @@
     
     <div class="logs">
         <h2>Recent Log Entries</h2>
+        <div class="filter-buttons">
+            <a href="/" class="filter-btn {% if not current_filter %}active{% endif %}">All</a>
+            <a href="/?level=error" class="filter-btn {% if current_filter == 'error' %}active{% endif %}">Error</a>
+            <a href="/?level=warn" class="filter-btn {% if current_filter == 'warn' %}active{% endif %}">Warn</a>
+            <a href="/?level=notice" class="filter-btn {% if current_filter == 'notice' %}active{% endif %}">Notice</a>
+            <a href="/?level=info" class="filter-btn {% if current_filter == 'info' %}active{% endif %}">Info</a>
+        </div>
         {% for entry in logs[-20:]|reverse %}
         <div class="log-entry">
             <span class="level level-{{ entry.level }}">{{ entry.level.upper() }}</span>

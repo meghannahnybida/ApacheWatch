@@ -62,8 +62,14 @@ def collect_metrics():
 # LOG PARSING
 # =============================================================================
 
-def parse_error_log(log_path, max_lines=100):
-    """Parse recent entries from Apache error log."""
+def parse_error_log(log_path, max_lines=100, level_filter=None):
+    """Parse recent entries from Apache error log.
+    
+    Args:
+        log_path: Path to the Apache error log file
+        max_lines: Maximum number of lines to read from the end of the file
+        level_filter: Optional log level to filter by ('error', 'warn', 'info', etc.)
+    """
     entries = []
     
     if not os.path.exists(log_path):
@@ -99,6 +105,11 @@ def parse_error_log(log_path, max_lines=100):
                     "level": "unknown",
                     "message": line[:200]
                 })
+    
+        # Apply level filter if specified
+        if level_filter:
+            entries = [e for e in entries if e['level'].lower() == level_filter.lower()]
+    
     except PermissionError:
         entries.append({
             "timestamp": datetime.now().isoformat(),
@@ -224,8 +235,11 @@ config = load_config()
 @app.route("/")
 def dashboard():
     """Render the dashboard."""
+    from flask import request
+    
     metrics = collect_metrics()
-    logs = parse_error_log(config["apache"]["error_log"])
+    level_filter = request.args.get('level')  # Get level filter from query params
+    logs = parse_error_log(config["apache"]["error_log"], level_filter=level_filter)
     
     # Save metrics snapshot
     add_metrics_snapshot(config["database"], metrics)
@@ -234,7 +248,8 @@ def dashboard():
         "dashboard.html",
         server_name=config["server_name"],
         metrics=metrics,
-        logs=logs
+        logs=logs,
+        current_filter=level_filter
     )
 
 @app.route("/api/metrics")
@@ -245,7 +260,10 @@ def api_metrics():
 @app.route("/api/logs")
 def api_logs():
     """Get recent log entries as JSON."""
-    return jsonify(parse_error_log(config["apache"]["error_log"]))
+    from flask import request
+    
+    level_filter = request.args.get('level')  # Get level filter from query params
+    return jsonify(parse_error_log(config["apache"]["error_log"], level_filter=level_filter))
 
 @app.route("/api/history")
 def api_history():

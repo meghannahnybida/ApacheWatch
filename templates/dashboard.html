@@ -30,6 +30,16 @@
         .filter-btn { padding: 6px 12px; background: #f3f4f6; border: 1px solid #d1d5db; border-radius: 4px; text-decoration: none; color: #374151; font-size: 12px; transition: all 0.2s; }
         .filter-btn:hover { background: #e5e7eb; }
         .filter-btn.active { background: #3b82f6; color: white; border-color: #3b82f6; }
+        .logs-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
+        .logs-header h2 { margin: 0; }
+        .tail-toggle { display: flex; align-items: center; gap: 8px; font-size: 12px; color: #666; }
+        .toggle-switch { position: relative; display: inline-block; width: 40px; height: 20px; }
+        .toggle-switch input { opacity: 0; width: 0; height: 0; }
+        .toggle-slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #ccc; transition: 0.3s; border-radius: 20px; }
+        .toggle-slider:before { position: absolute; content: ""; height: 14px; width: 14px; left: 3px; bottom: 3px; background-color: white; transition: 0.3s; border-radius: 50%; }
+        .toggle-switch input:checked + .toggle-slider { background-color: #10b981; }
+        .toggle-switch input:checked + .toggle-slider:before { transform: translateX(20px); }
+        .tail-status { font-size: 11px; color: #10b981; font-weight: 500; }
         .refresh-note { text-align: center; color: #999; font-size: 12px; margin-top: 20px; }
     </style>
 </head>
@@ -59,7 +69,17 @@
     </div>
     
     <div class="logs">
-        <h2>Recent Log Entries</h2>
+        <div class="logs-header">
+            <h2>Recent Log Entries</h2>
+            <div class="tail-toggle">
+                <span>Tail Mode</span>
+                <label class="toggle-switch">
+                    <input type="checkbox" id="tailToggle">
+                    <span class="toggle-slider"></span>
+                </label>
+                <span class="tail-status" id="tailStatus" style="display: none;">● Live</span>
+            </div>
+        </div>
         <div class="filter-buttons">
             <a href="/" class="filter-btn {% if not current_filter %}active{% endif %}">All</a>
             <a href="/?level=error" class="filter-btn {% if current_filter == 'error' %}active{% endif %}">Error</a>
@@ -67,6 +87,7 @@
             <a href="/?level=notice" class="filter-btn {% if current_filter == 'notice' %}active{% endif %}">Notice</a>
             <a href="/?level=info" class="filter-btn {% if current_filter == 'info' %}active{% endif %}">Info</a>
         </div>
+        <div id="logEntries">
         {% for entry in logs[-20:]|reverse %}
         <div class="log-entry">
             <span class="level level-{{ entry.level }}">{{ entry.level.upper() }}</span>
@@ -75,8 +96,76 @@
         {% else %}
         <div class="log-entry">No log entries found or unable to read log file.</div>
         {% endfor %}
+        </div>
     </div>
     
     <p class="refresh-note">Last updated: {{ metrics.timestamp }} | Refresh page to update</p>
+
+    <script>
+        let tailInterval = null;
+        const tailToggle = document.getElementById('tailToggle');
+        const tailStatus = document.getElementById('tailStatus');
+        const logEntries = document.getElementById('logEntries');
+        
+        // Load saved preference
+        const savedTailMode = localStorage.getItem('tailMode') === 'true';
+        if (savedTailMode) {
+            tailToggle.checked = true;
+            startTailMode();
+        }
+        
+        tailToggle.addEventListener('change', function() {
+            if (this.checked) {
+                startTailMode();
+                localStorage.setItem('tailMode', 'true');
+            } else {
+                stopTailMode();
+                localStorage.setItem('tailMode', 'false');
+            }
+        });
+        
+        function startTailMode() {
+            tailStatus.style.display = 'inline';
+            // Fetch logs every 5 seconds
+            tailInterval = setInterval(fetchLogs, 5000);
+        }
+        
+        function stopTailMode() {
+            tailStatus.style.display = 'none';
+            if (tailInterval) {
+                clearInterval(tailInterval);
+                tailInterval = null;
+            }
+        }
+        
+        function fetchLogs() {
+            // Get current filter from URL
+            const urlParams = new URLSearchParams(window.location.search);
+            const level = urlParams.get('level');
+            const apiUrl = level ? `/api/logs?level=${level}` : '/api/logs';
+            
+            fetch(apiUrl)
+                .then(response => response.json())
+                .then(logs => {
+                    // Get last 20 entries (matching template logic)
+                    const recentLogs = logs.slice(-20).reverse();
+                    
+                    if (recentLogs.length === 0) {
+                        logEntries.innerHTML = '<div class="log-entry">No log entries found or unable to read log file.</div>';
+                        return;
+                    }
+                    
+                    logEntries.innerHTML = recentLogs.map(entry => `
+                        <div class="log-entry">
+                            <span class="level level-${entry.level}">${entry.level.toUpperCase()}</span>
+                            ${entry.message}
+                        </div>
+                    `).join('');
+                })
+                .catch(error => {
+                    console.error('Error fetching logs:', error);
+                });
+        }
+    </script>
 </body>
 </html>

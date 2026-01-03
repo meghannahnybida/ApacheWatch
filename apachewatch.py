@@ -125,6 +125,110 @@ def parse_error_log(log_path, max_lines=100, level_filter=None):
     
     return entries
 
+def parse_access_log(log_path, max_lines=1000):
+    """Parse Apache access log entries.
+    
+    Args:
+        log_path: Path to the Apache access log file
+        max_lines: Maximum number of lines to read from the end of the file
+    
+    Returns:
+        List of dictionaries containing parsed log entries
+    """
+    entries = []
+    
+    if not os.path.exists(log_path):
+        return entries
+    
+    try:
+        with open(log_path, 'r') as f:
+            lines = f.readlines()[-max_lines:]
+        
+        # Apache common/combined log format pattern
+        # IP - user [timestamp] "method path protocol" status size "referer" "user-agent"
+        pattern = r'^(\S+)\s+\S+\s+(\S+)\s+\[([^\]]+)\]\s+"(\S+)\s+(\S+)\s+(\S+)"\s+(\d+)\s+(\S+)\s*"?([^"]*)"?\s*"?([^"]*)"?'
+        
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+            
+            match = re.match(pattern, line)
+            if match:
+                ip, user, timestamp, method, path, protocol, status, size, referer, user_agent = match.groups()
+                
+                entries.append({
+                    "ip": ip,
+                    "user": user if user != "-" else None,
+                    "timestamp": timestamp,
+                    "method": method,
+                    "path": path,
+                    "protocol": protocol,
+                    "status": int(status),
+                    "size": int(size) if size.isdigit() else 0,
+                    "referer": referer if referer and referer != "-" else None,
+                    "user_agent": user_agent if user_agent else None
+                })
+    
+    except PermissionError:
+        pass  # Silently fail if we can't read the file
+    except Exception as e:
+        pass  # Silently fail on parsing errors
+    
+    return entries
+
+def analyze_access_logs(entries):
+    """Analyze access log entries to generate statistics.
+    
+    Args:
+        entries: List of parsed access log entries
+    
+    Returns:
+        Dictionary containing analytics data
+    """
+    from collections import Counter
+    
+    if not entries:
+        return {
+            "top_ips": [],
+            "top_pages": [],
+            "status_codes": {},
+            "total_requests": 0,
+            "unique_visitors": 0
+        }
+    
+    # Count IPs
+    ip_counter = Counter(entry["ip"] for entry in entries)
+    
+    # Count pages/endpoints
+    page_counter = Counter(entry["path"] for entry in entries)
+    
+    # Count status codes
+    status_counter = Counter(entry["status"] for entry in entries)
+    
+    # Get top IPs with request counts
+    top_ips = [
+        {"ip": ip, "requests": count}
+        for ip, count in ip_counter.most_common(10)
+    ]
+    
+    # Get top pages with request counts
+    top_pages = [
+        {"path": path, "requests": count}
+        for path, count in page_counter.most_common(10)
+    ]
+    
+    # Convert status codes to dict
+    status_codes = dict(status_counter)
+    
+    return {
+        "top_ips": top_ips,
+        "top_pages": top_pages,
+        "status_codes": status_codes,
+        "total_requests": len(entries),
+        "unique_visitors": len(ip_counter)
+    }
+
 # =============================================================================
 # DATA STORAGE (SQLite Database)
 # =============================================================================
@@ -273,6 +377,17 @@ def api_history():
         "metrics_history": history,
         "count": len(history)
     })
+
+@app.route("/api/access-stats")
+def api_access_stats():
+    """Get access log analytics."""
+    # Parse access log
+    entries = parse_access_log(config["apache"].get("access_log", ""), max_lines=1000)
+    
+    # Analyze the entries
+    stats = analyze_access_logs(entries)
+    
+    return jsonify(stats)
 
 # =============================================================================
 # MAIN

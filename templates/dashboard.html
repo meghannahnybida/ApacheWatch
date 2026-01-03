@@ -41,6 +41,10 @@
         .toggle-switch input:checked + .toggle-slider:before { transform: translateX(20px); }
         .tail-status { font-size: 11px; color: #10b981; font-weight: 500; }
         .refresh-note { text-align: center; color: #999; font-size: 12px; margin-top: 20px; }
+        .stat-row { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid #f3f4f6; }
+        .stat-row:last-child { border-bottom: none; }
+        .stat-label { color: #666; font-family: monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 70%; }
+        .stat-value { color: #333; font-weight: 600; }
     </style>
 </head>
 <body>
@@ -96,6 +100,21 @@
         {% else %}
         <div class="log-entry">No log entries found or unable to read log file.</div>
         {% endfor %}
+        </div>
+    </div>
+    
+    <div class="grid" style="margin-top: 30px;">
+        <div class="card">
+            <h2>Top Visitors (by IP)</h2>
+            <div id="topIps" style="margin-top: 15px; font-size: 13px;">
+                <div style="color: #999;">Loading...</div>
+            </div>
+        </div>
+        <div class="card">
+            <h2>Most Requested Pages</h2>
+            <div id="topPages" style="margin-top: 15px; font-size: 13px;">
+                <div style="color: #999;">Loading...</div>
+            </div>
         </div>
     </div>
     
@@ -166,6 +185,47 @@
                     console.error('Error fetching logs:', error);
                 });
         }
+        
+        // Fetch access log analytics
+        function fetchAccessStats() {
+            fetch('/api/access-stats')
+                .then(response => response.json())
+                .then(stats => {
+                    // Display top IPs
+                    const topIpsDiv = document.getElementById('topIps');
+                    if (stats.top_ips && stats.top_ips.length > 0) {
+                        topIpsDiv.innerHTML = stats.top_ips.map(item => `
+                            <div class="stat-row">
+                                <span class="stat-label">${item.ip}</span>
+                                <span class="stat-value">${item.requests}</span>
+                            </div>
+                        `).join('');
+                    } else {
+                        topIpsDiv.innerHTML = '<div style="color: #999;">No data available</div>';
+                    }
+                    
+                    // Display top pages
+                    const topPagesDiv = document.getElementById('topPages');
+                    if (stats.top_pages && stats.top_pages.length > 0) {
+                        topPagesDiv.innerHTML = stats.top_pages.map(item => `
+                            <div class="stat-row">
+                                <span class="stat-label">${item.path}</span>
+                                <span class="stat-value">${item.requests}</span>
+                            </div>
+                        `).join('');
+                    } else {
+                        topPagesDiv.innerHTML = '<div style="color: #999;">No data available</div>';
+                    }
+                })
+                .catch(error => {
+                    console.error('Error fetching access stats:', error);
+                    document.getElementById('topIps').innerHTML = '<div style="color: #ef4444;">Error loading data</div>';
+                    document.getElementById('topPages').innerHTML = '<div style="color: #ef4444;">Error loading data</div>';
+                });
+        }
+        
+        // Load analytics on page load
+        fetchAccessStats();
     </script>
 </body>
 </html>

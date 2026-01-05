@@ -3,6 +3,7 @@
 <head>
     <title>ApacheWatch</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f5f5; padding: 20px; }
@@ -45,6 +46,8 @@
         .stat-row:last-child { border-bottom: none; }
         .stat-label { color: #666; font-family: monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 70%; }
         .stat-value { color: #333; font-weight: 600; }
+        .chart-container { position: relative; height: 300px; margin-top: 15px; }
+        .chart-card { background: white; border-radius: 8px; padding: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-top: 30px; }
     </style>
 </head>
 <body>
@@ -100,6 +103,28 @@
         {% else %}
         <div class="log-entry">No log entries found or unable to read log file.</div>
         {% endfor %}
+        </div>
+    </div>
+    
+    <div class="chart-card">
+        <h2>Traffic Over Time (Last 24 Hours)</h2>
+        <div class="chart-container">
+            <canvas id="trafficChart"></canvas>
+        </div>
+    </div>
+    
+    <div class="grid" style="margin-top: 30px;">
+        <div class="chart-card" style="margin-top: 0;">
+            <h2>Status Codes Over Time</h2>
+            <div class="chart-container" style="height: 250px;">
+                <canvas id="statusChart"></canvas>
+            </div>
+        </div>
+        <div class="chart-card" style="margin-top: 0;">
+            <h2>Unique Visitors Per Hour</h2>
+            <div class="chart-container" style="height: 250px;">
+                <canvas id="visitorsChart"></canvas>
+            </div>
         </div>
     </div>
     
@@ -226,6 +251,174 @@
         
         // Load analytics on page load
         fetchAccessStats();
+        
+        // Initialize and load traffic charts
+        let trafficChart, statusChart, visitorsChart;
+        
+        function fetchTrafficData() {
+            fetch('/api/traffic-chart?hours=24')
+                .then(response => response.json())
+                .then(result => {
+                    const data = result.data;
+                    
+                    if (!data || data.length === 0) {
+                        return;
+                    }
+                    
+                    // Extract labels (hours) and data
+                    const labels = data.map(item => {
+                        const date = new Date(item.hour);
+                        return date.toLocaleString('en-US', { 
+                            month: 'short', 
+                            day: 'numeric', 
+                            hour: '2-digit',
+                            hour12: false
+                        });
+                    });
+                    
+                    const requests = data.map(item => item.requests);
+                    const statusSuccess = data.map(item => item.status_success);
+                    const statusRedirects = data.map(item => item.status_redirects);
+                    const statusClientErrors = data.map(item => item.status_client_errors);
+                    const statusServerErrors = data.map(item => item.status_server_errors);
+                    const uniqueIps = data.map(item => item.unique_ips);
+                    
+                    // Traffic Chart
+                    const trafficCtx = document.getElementById('trafficChart').getContext('2d');
+                    if (trafficChart) trafficChart.destroy();
+                    trafficChart = new Chart(trafficCtx, {
+                        type: 'line',
+                        data: {
+                            labels: labels,
+                            datasets: [{
+                                label: 'Total Requests',
+                                data: requests,
+                                borderColor: '#3b82f6',
+                                backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                                tension: 0.3,
+                                fill: true
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            plugins: {
+                                legend: {
+                                    display: true,
+                                    position: 'top'
+                                }
+                            },
+                            scales: {
+                                y: {
+                                    beginAtZero: true,
+                                    ticks: {
+                                        precision: 0
+                                    }
+                                }
+                            }
+                        }
+                    });
+                    
+                    // Status Codes Chart
+                    const statusCtx = document.getElementById('statusChart').getContext('2d');
+                    if (statusChart) statusChart.destroy();
+                    statusChart = new Chart(statusCtx, {
+                        type: 'bar',
+                        data: {
+                            labels: labels,
+                            datasets: [
+                                {
+                                    label: 'Success (200-299)',
+                                    data: statusSuccess,
+                                    backgroundColor: 'rgba(16, 185, 129, 0.7)',
+                                    stack: 'stack0'
+                                },
+                                {
+                                    label: 'Redirects (300-399)',
+                                    data: statusRedirects,
+                                    backgroundColor: 'rgba(59, 130, 246, 0.7)',
+                                    stack: 'stack0'
+                                },
+                                {
+                                    label: 'Client Errors (400-499)',
+                                    data: statusClientErrors,
+                                    backgroundColor: 'rgba(245, 158, 11, 0.7)',
+                                    stack: 'stack0'
+                                },
+                                {
+                                    label: 'Server Errors (500-599)',
+                                    data: statusServerErrors,
+                                    backgroundColor: 'rgba(239, 68, 68, 0.7)',
+                                    stack: 'stack0'
+                                }
+                            ]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            plugins: {
+                                legend: {
+                                    display: true,
+                                    position: 'top'
+                                }
+                            },
+                            scales: {
+                                x: {
+                                    stacked: true
+                                },
+                                y: {
+                                    stacked: true,
+                                    beginAtZero: true,
+                                    ticks: {
+                                        precision: 0
+                                    }
+                                }
+                            }
+                        }
+                    });
+                    
+                    // Unique Visitors Chart
+                    const visitorsCtx = document.getElementById('visitorsChart').getContext('2d');
+                    if (visitorsChart) visitorsChart.destroy();
+                    visitorsChart = new Chart(visitorsCtx, {
+                        type: 'bar',
+                        data: {
+                            labels: labels,
+                            datasets: [{
+                                label: 'Unique IPs',
+                                data: uniqueIps,
+                                backgroundColor: 'rgba(139, 92, 246, 0.7)',
+                                borderColor: 'rgba(139, 92, 246, 1)',
+                                borderWidth: 1
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            plugins: {
+                                legend: {
+                                    display: true,
+                                    position: 'top'
+                                }
+                            },
+                            scales: {
+                                y: {
+                                    beginAtZero: true,
+                                    ticks: {
+                                        precision: 0
+                                    }
+                                }
+                            }
+                        }
+                    });
+                })
+                .catch(error => {
+                    console.error('Error fetching traffic data:', error);
+                });
+        }
+        
+        // Load charts on page load
+        fetchTrafficData();
     </script>
 </body>
 </html>

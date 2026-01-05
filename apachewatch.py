@@ -261,6 +261,24 @@ def init_database(db_path):
         CREATE INDEX IF NOT EXISTS idx_timestamp ON metrics(timestamp)
     ''')
     
+    # Create access_logs aggregates table for traffic charts
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS access_logs_hourly (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            hour_timestamp TEXT NOT NULL UNIQUE,
+            request_count INTEGER DEFAULT 0,
+            status_success INTEGER DEFAULT 0,
+            status_redirects INTEGER DEFAULT 0,
+            status_client_errors INTEGER DEFAULT 0,
+            status_server_errors INTEGER DEFAULT 0,
+            unique_ips INTEGER DEFAULT 0
+        )
+    ''')
+    
+    cursor.execute('''
+        CREATE INDEX IF NOT EXISTS idx_hour_timestamp ON access_logs_hourly(hour_timestamp)
+    ''')
+    
     conn.commit()
     conn.close()
 
@@ -329,6 +347,118 @@ def get_metrics_history(db_path, limit=1000):
     # Reverse to get chronological order (oldest first)
     return list(reversed(history))
 
+def aggregate_access_logs(db_path, log_path, max_lines=10000):
+    """Parse access logs and aggregate by hour, storing in database."""
+    from collections import defaultdict
+    from datetime import datetime
+    
+    init_database(db_path)
+    
+    # Parse access logs
+    entries = parse_access_log(log_path, max_lines=max_lines)
+    
+    if not entries:
+        return
+    
+    # Aggregate by hour
+    hourly_data = defaultdict(lambda: {
+        'request_count': 0,
+        'status_success': 0,
+        'status_redirects': 0,
+        'status_client_errors': 0,
+        'status_server_errors': 0,
+        'ips': set()
+    })
+    
+    for entry in entries:
+        try:
+            # Parse Apache timestamp format: 04/Jan/2026:14:35:22 +0000
+            timestamp_str = entry['timestamp']
+            dt = datetime.strptime(timestamp_str.split()[0], '%d/%b/%Y:%H:%M:%S')
+            # Round to hour
+            hour_key = dt.strftime('%Y-%m-%d %H:00:00')
+            
+            hourly_data[hour_key]['request_count'] += 1
+            hourly_data[hour_key]['ips'].add(entry['ip'])
+            
+            # Track status codes
+            status = entry['status']
+            if 200 <= status < 300:
+                hourly_data[hour_key]['status_success'] += 1
+            elif 300 <= status < 400:
+                hourly_data[hour_key]['status_redirects'] += 1
+            elif 400 <= status < 500:
+                hourly_data[hour_key]['status_client_errors'] += 1
+            elif 500 <= status < 600:
+                hourly_data[hour_key]['status_server_errors'] += 1
+        except Exception:
+            # Skip entries with unparseable timestamps
+            continue
+    
+    # Store in database (upsert)
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    
+    for hour_timestamp, data in hourly_data.items():
+        cursor.execute('''
+            INSERT INTO access_logs_hourly (
+                hour_timestamp, request_count, 
+                status_success, status_redirects, status_client_errors, status_server_errors,
+                unique_ips
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(hour_timestamp) DO UPDATE SET
+                request_count = excluded.request_count,
+                status_success = excluded.status_success,
+                status_redirects = excluded.status_redirects,
+                status_client_errors = excluded.status_client_errors,
+                status_server_errors = excluded.status_server_errors,
+                unique_ips = excluded.unique_ips
+        ''', (
+            hour_timestamp,
+            data['request_count'],
+            data['status_success'],
+            data['status_redirects'],
+            data['status_client_errors'],
+            data['status_server_errors'],
+            len(data['ips'])
+        ))
+    
+    conn.commit()
+    conn.close()
+
+def get_traffic_chart_data(db_path, hours=24):
+    """Get traffic data for charts."""
+    init_database(db_path)
+    
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    
+    # Get last N hours of data
+    cursor.execute('''
+        SELECT * FROM access_logs_hourly
+        ORDER BY hour_timestamp DESC
+        LIMIT ?
+    ''', (hours,))
+    
+    rows = cursor.fetchall()
+    conn.close()
+    
+    # Convert to list and reverse to get chronological order
+    data = []
+    for row in reversed(rows):
+        data.append({
+            'hour': row['hour_timestamp'],
+            'requests': row['request_count'],
+            'status_success': row['status_success'],
+            'status_redirects': row['status_redirects'],
+            'status_client_errors': row['status_client_errors'],
+            'status_server_errors': row['status_server_errors'],
+            'unique_ips': row['unique_ips']
+        })
+    
+    return data
+
 # =============================================================================
 # FLASK APP
 # =============================================================================
@@ -347,6 +477,10 @@ def dashboard():
     
     # Save metrics snapshot
     add_metrics_snapshot(config["database"], metrics)
+    
+    # Aggregate access logs for traffic charts
+    if config["apache"].get("access_log"):
+        aggregate_access_logs(config["database"], config["apache"]["access_log"])
     
     return render_template(
         "dashboard.html",
@@ -388,6 +522,19 @@ def api_access_stats():
     stats = analyze_access_logs(entries)
     
     return jsonify(stats)
+
+@app.route("/api/traffic-chart")
+def api_traffic_chart():
+    """Get traffic data for charts."""
+    from flask import request
+    
+    hours = int(request.args.get('hours', 24))
+    data = get_traffic_chart_data(config["database"], hours=hours)
+    
+    return jsonify({
+        'data': data,
+        'count': len(data)
+    })
 
 # =============================================================================
 # MAIN

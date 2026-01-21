@@ -34,13 +34,24 @@
     <div class="logs">
         <div class="logs-header">
             <h2>Recent Log Entries</h2>
-            <div class="tail-toggle">
-                <span>Tail Mode</span>
-                <label class="toggle-switch">
-                    <input type="checkbox" id="tailToggle">
-                    <span class="toggle-slider"></span>
-                </label>
-                <span class="tail-status" id="tailStatus" style="display: none;">● Live</span>
+            <div style="display: flex; gap: 15px; align-items: center;">
+                <div style="display: flex; align-items: center; gap: 8px; font-size: 12px; color: #666;">
+                    <label for="logLimit">Show:</label>
+                    <select id="logLimit" style="padding: 4px 8px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 12px; background: white;">
+                        <option value="10">10 lines</option>
+                        <option value="20" selected>20 lines</option>
+                        <option value="50">50 lines</option>
+                        <option value="100">100 lines</option>
+                    </select>
+                </div>
+                <div class="tail-toggle">
+                    <span>Tail Mode</span>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="tailToggle">
+                        <span class="toggle-slider"></span>
+                    </label>
+                    <span class="tail-status" id="tailStatus" style="display: none;">● Live</span>
+                </div>
             </div>
         </div>
         <div class="filter-buttons">
@@ -51,7 +62,7 @@
             <a href="/?level=info" class="filter-btn {% if current_filter == 'info' %}active{% endif %}">Info</a>
         </div>
         <div id="logEntries">
-        {% for entry in logs[-20:]|reverse %}
+        {% for entry in logs|reverse %}
         <div class="log-entry">
             <span class="level level-{{ entry.level }}">{{ entry.level.upper() }}</span>
             {{ entry.message }}
@@ -106,12 +117,22 @@
         const tailToggle = document.getElementById('tailToggle');
         const tailStatus = document.getElementById('tailStatus');
         const logEntries = document.getElementById('logEntries');
+        const logLimit = document.getElementById('logLimit');
         
-        // Load saved preference
+        // Load saved preferences
         const savedTailMode = localStorage.getItem('tailMode') === 'true';
         if (savedTailMode) {
             tailToggle.checked = true;
             startTailMode();
+        }
+        
+        const savedLogLimit = localStorage.getItem('logLimit');
+        if (savedLogLimit) {
+            logLimit.value = savedLogLimit;
+            // If saved limit differs from default (20), fetch logs with saved limit
+            if (savedLogLimit !== '20') {
+                fetchLogs();
+            }
         }
         
         tailToggle.addEventListener('change', function() {
@@ -122,6 +143,11 @@
                 stopTailMode();
                 localStorage.setItem('tailMode', 'false');
             }
+        });
+        
+        logLimit.addEventListener('change', function() {
+            localStorage.setItem('logLimit', this.value);
+            fetchLogs(); // Immediately refresh with new limit (works with or without tail mode)
         });
         
         function startTailMode() {
@@ -142,13 +168,20 @@
             // Get current filter from URL
             const urlParams = new URLSearchParams(window.location.search);
             const level = urlParams.get('level');
-            const apiUrl = level ? `/api/logs?level=${level}` : '/api/logs';
+            const limit = logLimit.value;
+            
+            let apiUrl = '/api/logs?';
+            const params = [];
+            if (level) params.push(`level=${level}`);
+            if (limit) params.push(`limit=${limit}`);
+            apiUrl += params.join('&');
             
             fetch(apiUrl)
                 .then(response => response.json())
                 .then(logs => {
-                    // Get last 20 entries (matching template logic)
-                    const recentLogs = logs.slice(-20).reverse();
+                    // Get last N entries based on user preference
+                    const limit = parseInt(logLimit.value);
+                    const recentLogs = logs.slice(-limit).reverse();
                     
                     if (recentLogs.length === 0) {
                         logEntries.innerHTML = '<div class="log-entry">No log entries found or unable to read log file.</div>';

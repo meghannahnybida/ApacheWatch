@@ -473,7 +473,8 @@ def dashboard():
     
     metrics = collect_metrics()
     level_filter = request.args.get('level')  # Get level filter from query params
-    logs = parse_error_log(config["apache"]["error_log"], level_filter=level_filter)
+    limit = int(request.args.get('limit', 20))  # Get limit from query params, default 20
+    logs = parse_error_log(config["apache"]["error_log"], max_lines=100, level_filter=level_filter)[-limit:]
     
     # Save metrics snapshot
     add_metrics_snapshot(config["database"], metrics)
@@ -501,7 +502,10 @@ def api_logs():
     from flask import request
     
     level_filter = request.args.get('level')  # Get level filter from query params
-    return jsonify(parse_error_log(config["apache"]["error_log"], level_filter=level_filter))
+    limit = int(request.args.get('limit', 100))  # Get limit from query params, default 100
+    # Read more lines than limit to ensure enough entries after filtering
+    logs = parse_error_log(config["apache"]["error_log"], max_lines=max(limit * 2, 100), level_filter=level_filter)
+    return jsonify(logs[-limit:])
 
 @app.route("/api/history")
 def api_history():

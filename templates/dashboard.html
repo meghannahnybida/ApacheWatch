@@ -74,7 +74,20 @@
     </div>
     
     <div class="chart-card">
-        <h2>Traffic Over Time (Last 24 Hours)</h2>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+            <h2 style="margin: 0;">Traffic Over Time</h2>
+            <div style="display: flex; align-items: center; gap: 8px;">
+                <label for="timeRange" style="font-size: 13px; color: #666;">Time Range:</label>
+                <select id="timeRange" style="padding: 6px 12px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 13px; background: white; cursor: pointer;">
+                    <option value="24">Last 24 Hours</option>
+                    <option value="72">Last 3 Days</option>
+                    <option value="168" selected>Last 7 Days</option>
+                    <option value="336">Last 14 Days</option>
+                    <option value="720">Last 30 Days</option>
+                    <option value="all">All Time</option>
+                </select>
+            </div>
+        </div>
         <div class="chart-container">
             <canvas id="trafficChart"></canvas>
         </div>
@@ -244,8 +257,26 @@
         // Initialize and load traffic charts
         let trafficChart, statusChart, visitorsChart;
         
+        // Time range selector
+        const timeRangeSelect = document.getElementById('timeRange');
+        
+        // Load saved time range preference
+        const savedTimeRange = localStorage.getItem('timeRange');
+        if (savedTimeRange) {
+            timeRangeSelect.value = savedTimeRange;
+        }
+        
+        // Listen for time range changes
+        timeRangeSelect.addEventListener('change', function() {
+            localStorage.setItem('timeRange', this.value);
+            fetchTrafficData();
+        });
+        
         function fetchTrafficData() {
-            fetch('/api/traffic-chart?hours=24')
+            const hours = timeRangeSelect.value;
+            const apiUrl = hours === 'all' ? '/api/traffic-chart?hours=10000' : `/api/traffic-chart?hours=${hours}`;
+            
+            fetch(apiUrl)
                 .then(response => response.json())
                 .then(result => {
                     const data = result.data;

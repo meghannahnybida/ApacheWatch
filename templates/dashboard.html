@@ -36,6 +36,11 @@
             <h2>Recent Log Entries</h2>
             <div style="display: flex; gap: 15px; align-items: center;">
                 <div style="display: flex; align-items: center; gap: 8px; font-size: 12px; color: #666;">
+                    <label for="logSearch" style="display: flex; align-items: center; gap: 8px;">
+                        <input type="text" id="logSearch" placeholder="Search logs..." style="padding: 4px 8px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 12px; width: 200px;">
+                    </label>
+                </div>
+                <div style="display: flex; align-items: center; gap: 8px; font-size: 12px; color: #666;">
                     <label for="logLimit">Show:</label>
                     <select id="logLimit" style="padding: 4px 8px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 12px; background: white;">
                         <option value="10">10 lines</option>
@@ -131,6 +136,8 @@
         const tailStatus = document.getElementById('tailStatus');
         const logEntries = document.getElementById('logEntries');
         const logLimit = document.getElementById('logLimit');
+        const logSearch = document.getElementById('logSearch');
+        let currentLogs = []; // Store current logs for filtering
         
         // Load saved preferences
         const savedTailMode = localStorage.getItem('tailMode') === 'true';
@@ -142,11 +149,10 @@
         const savedLogLimit = localStorage.getItem('logLimit');
         if (savedLogLimit) {
             logLimit.value = savedLogLimit;
-            // If saved limit differs from default (20), fetch logs with saved limit
-            if (savedLogLimit !== '20') {
-                fetchLogs();
-            }
         }
+        
+        // Load logs on page load to enable search functionality
+        fetchLogs();
         
         tailToggle.addEventListener('change', function() {
             if (this.checked) {
@@ -163,6 +169,11 @@
             fetchLogs(); // Immediately refresh with new limit (works with or without tail mode)
         });
         
+        // Search functionality
+        logSearch.addEventListener('input', function() {
+            filterAndDisplayLogs();
+        });
+        
         function startTailMode() {
             tailStatus.style.display = 'inline';
             // Fetch logs every 5 seconds
@@ -175,6 +186,37 @@
                 clearInterval(tailInterval);
                 tailInterval = null;
             }
+        }
+        
+        function filterAndDisplayLogs() {
+            const searchTerm = logSearch.value.toLowerCase().trim();
+            
+            if (currentLogs.length === 0) {
+                logEntries.innerHTML = '<div class="log-entry">No log entries found or unable to read log file.</div>';
+                return;
+            }
+            
+            // Filter logs based on search term
+            let filteredLogs = currentLogs;
+            if (searchTerm) {
+                filteredLogs = currentLogs.filter(entry => {
+                    return entry.message.toLowerCase().includes(searchTerm) ||
+                           entry.level.toLowerCase().includes(searchTerm) ||
+                           (entry.timestamp && entry.timestamp.toLowerCase().includes(searchTerm));
+                });
+            }
+            
+            if (filteredLogs.length === 0) {
+                logEntries.innerHTML = `<div class="log-entry" style="color: #999;">No logs match "${searchTerm}"</div>`;
+                return;
+            }
+            
+            logEntries.innerHTML = filteredLogs.map(entry => `
+                <div class="log-entry">
+                    <span class="level level-${entry.level}">${entry.level.toUpperCase()}</span>
+                    ${entry.message}
+                </div>
+            `).join('');
         }
         
         function fetchLogs() {
@@ -194,19 +236,8 @@
                 .then(logs => {
                     // Get last N entries based on user preference
                     const limit = parseInt(logLimit.value);
-                    const recentLogs = logs.slice(-limit).reverse();
-                    
-                    if (recentLogs.length === 0) {
-                        logEntries.innerHTML = '<div class="log-entry">No log entries found or unable to read log file.</div>';
-                        return;
-                    }
-                    
-                    logEntries.innerHTML = recentLogs.map(entry => `
-                        <div class="log-entry">
-                            <span class="level level-${entry.level}">${entry.level.toUpperCase()}</span>
-                            ${entry.message}
-                        </div>
-                    `).join('');
+                    currentLogs = logs.slice(-limit).reverse();
+                    filterAndDisplayLogs();
                 })
                 .catch(error => {
                     console.error('Error fetching logs:', error);

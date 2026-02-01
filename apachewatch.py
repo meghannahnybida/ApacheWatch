@@ -13,6 +13,14 @@ from datetime import datetime
 from pathlib import Path
 from flask import Flask, jsonify, render_template
 
+# Import IP analysis module
+try:
+    from ip_analyzer import analyze_ip_visitor
+    IP_ANALYSIS_AVAILABLE = True
+except ImportError:
+    IP_ANALYSIS_AVAILABLE = False
+    print("Warning: IP analysis module not available")
+
 # =============================================================================
 # CONFIGURATION
 # =============================================================================
@@ -194,23 +202,54 @@ def analyze_access_logs(entries):
             "top_pages": [],
             "status_codes": {},
             "total_requests": 0,
-            "unique_visitors": 0
+            "unique_visitors": 0,
+            "bot_stats": {
+                "total_bots": 0,
+                "total_humans": 0,
+                "bot_percentage": 0
+            }
         }
     
     # Count IPs
     ip_counter = Counter(entry["ip"] for entry in entries)
+    
+    # Enhanced IP analysis with hostname and bot detection
+    enriched_ips = []
+    bot_count = 0
+    human_count = 0
+    
+    if IP_ANALYSIS_AVAILABLE:
+        # Analyze each unique IP
+        for ip, count in ip_counter.most_common(20):  # Top 20 IPs
+            # Find a user agent for this IP
+            user_agent = None
+            for entry in entries:
+                if entry["ip"] == ip and entry.get("user_agent"):
+                    user_agent = entry["user_agent"]
+                    break
+            
+            # Analyze the IP
+            analysis = analyze_ip_visitor(ip, user_agent)
+            analysis["requests"] = count
+            enriched_ips.append(analysis)
+            
+            # Track bot vs human
+            if analysis.get("is_bot"):
+                bot_count += sum(1 for e in entries if e["ip"] == ip)
+            elif analysis.get("is_bot") == False:
+                human_count += sum(1 for e in entries if e["ip"] == ip)
+    else:
+        # Fallback without IP analysis
+        enriched_ips = [
+            {"ip": ip, "requests": count}
+            for ip, count in ip_counter.most_common(10)
+        ]
     
     # Count pages/endpoints
     page_counter = Counter(entry["path"] for entry in entries)
     
     # Count status codes
     status_counter = Counter(entry["status"] for entry in entries)
-    
-    # Get top IPs with request counts
-    top_ips = [
-        {"ip": ip, "requests": count}
-        for ip, count in ip_counter.most_common(10)
-    ]
     
     # Get top pages with request counts
     top_pages = [
@@ -221,12 +260,21 @@ def analyze_access_logs(entries):
     # Convert status codes to dict
     status_codes = dict(status_counter)
     
+    # Calculate bot percentage
+    total_requests = len(entries)
+    bot_percentage = round((bot_count / total_requests * 100), 1) if total_requests > 0 else 0
+    
     return {
-        "top_ips": top_ips,
+        "top_ips": enriched_ips[:10],  # Return top 10
         "top_pages": top_pages,
         "status_codes": status_codes,
-        "total_requests": len(entries),
-        "unique_visitors": len(ip_counter)
+        "total_requests": total_requests,
+        "unique_visitors": len(ip_counter),
+        "bot_stats": {
+            "total_bots": bot_count,
+            "total_humans": human_count,
+            "bot_percentage": bot_percentage
+        }
     }
 
 # =============================================================================

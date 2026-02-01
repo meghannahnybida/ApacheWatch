@@ -112,6 +112,10 @@ This creates sample Apache logs in the `./logs/` directory.
 - **Real-time Monitoring**: Live CPU, memory, and disk metrics
 - **Log Analysis**: Parse and filter Apache error logs by severity
 - **Traffic Analytics**: Analyze access patterns, top pages, and visitor IPs
+- **IP Visitor Analysis**: Identify bots vs real users via reverse DNS hostname lookup
+  - Detects search engine bots (Googlebot, Bingbot, etc.)
+  - Shows hostname for each visitor IP
+  - Tracks bot vs human traffic percentages
 - **Historical Data**: Track metrics over time with SQLite storage
 - **Web Dashboard**: Clean, responsive interface for all metrics
 - **Docker Ready**: Full containerization support for easy deployment

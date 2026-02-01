@@ -255,6 +255,62 @@ h1 {
     font-weight: 600; 
 }
 
+/* Enhanced IP row styling */
+.ip-row {
+    align-items: flex-start;
+    padding: 10px 0;
+}
+
+.ip-info {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    max-width: 75%;
+}
+
+.ip-main {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.ip-details {
+    font-size: 11px;
+    color: #666;
+    font-family: monospace;
+    padding-left: 2px;
+}
+
+/* Badge styles */
+.badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 10px;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.badge-bot {
+    background: #fef3c7;
+    color: #d97706;
+    border: 1px solid #fbbf24;
+}
+
+.badge-human {
+    background: #d1fae5;
+    color: #047857;
+    border: 1px solid #10b981;
+}
+
+.badge-unknown {
+    background: #e5e7eb;
+    color: #6b7280;
+    border: 1px solid #d1d5db;
+}
+
 .chart-container { 
     position: relative; 
     height: 300px; 

@@ -115,7 +115,14 @@
     
     <div class="grid" style="margin-top: 30px;">
         <div class="card">
-            <h2>Top Visitors (by IP)</h2>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                <h2 style="margin: 0;">Top Visitors (by IP)</h2>
+                <div id="botStats" style="font-size: 12px; color: #666;">
+                    <span style="color: #10b981;">👤 <span id="humanCount">-</span></span>
+                    <span style="margin-left: 10px; color: #f59e0b;">🤖 <span id="botCount">-</span></span>
+                    <span style="margin-left: 5px;">(<span id="botPercentage">-</span>%)</span>
+                </div>
+            </div>
             <div id="topIps" style="margin-top: 15px; font-size: 13px;">
                 <div style="color: #999;">Loading...</div>
             </div>
@@ -249,17 +256,45 @@
             fetch('/api/access-stats')
                 .then(response => response.json())
                 .then(stats => {
-                    // Display top IPs
+                    // Display top IPs with hostname and bot detection
                     const topIpsDiv = document.getElementById('topIps');
                     if (stats.top_ips && stats.top_ips.length > 0) {
-                        topIpsDiv.innerHTML = stats.top_ips.map(item => `
-                            <div class="stat-row">
-                                <span class="stat-label">${item.ip}</span>
-                                <span class="stat-value">${item.requests}</span>
-                            </div>
-                        `).join('');
+                        topIpsDiv.innerHTML = stats.top_ips.map(item => {
+                            // Build bot/human badge
+                            let badge = '';
+                            if (item.is_bot === true) {
+                                const botName = item.bot_name || 'Bot';
+                                const botType = item.bot_type || '';
+                                const title = botType ? `${botName} - ${botType}` : botName;
+                                badge = `<span class="badge badge-bot" title="${title}">${botName}</span>`;
+                            } else if (item.is_bot === false) {
+                                badge = `<span class="badge badge-human">User</span>`;
+                            } else {
+                                badge = `<span class="badge badge-unknown">Unknown</span>`;
+                            }
+                            
+                            return `
+                                <div class="stat-row ip-row">
+                                    <div class="ip-info">
+                                        <div class="ip-main">
+                                            <span class="stat-label">${item.ip}</span>
+                                            ${badge}
+                                        </div>
+                                        ${item.hostname ? `<div class="ip-details">${item.hostname}</div>` : ''}
+                                    </div>
+                                    <span class="stat-value">${item.requests}</span>
+                                </div>
+                            `;
+                        }).join('');
                     } else {
                         topIpsDiv.innerHTML = '<div style="color: #999;">No data available</div>';
+                    }
+                    
+                    // Update bot stats
+                    if (stats.bot_stats) {
+                        document.getElementById('humanCount').textContent = stats.bot_stats.total_humans || 0;
+                        document.getElementById('botCount').textContent = stats.bot_stats.total_bots || 0;
+                        document.getElementById('botPercentage').textContent = stats.bot_stats.bot_percentage || 0;
                     }
                     
                     // Display top pages

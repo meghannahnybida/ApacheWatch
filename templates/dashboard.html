@@ -12,29 +12,29 @@
     <div class="grid">
         <div class="card">
             <h2>CPU Usage</h2>
-            <div class="value">{{ metrics.cpu_percent }}%</div>
-            <div class="bar"><div class="bar-fill {{ 'bad' if metrics.cpu_percent > 90 else 'warn' if metrics.cpu_percent > 70 else 'good' }}" style="width: {{ metrics.cpu_percent }}%"></div></div>
+            <div class="value" id="cpu-value">{{ metrics.cpu_percent }}%</div>
+            <div class="bar"><div class="bar-fill {{ 'bad' if metrics.cpu_percent > 90 else 'warn' if metrics.cpu_percent > 70 else 'good' }}" id="cpu-bar" style="width: {{ metrics.cpu_percent }}%"></div></div>
         </div>
 
         <div class="card">
             <h2>Memory Usage</h2>
-            <div class="value">{{ metrics.memory.percent }}%</div>
-            <div class="sub">{{ metrics.memory.used_gb }} GB / {{ metrics.memory.total_gb }} GB</div>
-            <div class="bar"><div class="bar-fill {{ 'bad' if metrics.memory.percent > 90 else 'warn' if metrics.memory.percent > 70 else 'good' }}" style="width: {{ metrics.memory.percent }}%"></div></div>
+            <div class="value" id="mem-value">{{ metrics.memory.percent }}%</div>
+            <div class="sub" id="mem-sub">{{ metrics.memory.used_gb }} GB / {{ metrics.memory.total_gb }} GB</div>
+            <div class="bar"><div class="bar-fill {{ 'bad' if metrics.memory.percent > 90 else 'warn' if metrics.memory.percent > 70 else 'good' }}" id="mem-bar" style="width: {{ metrics.memory.percent }}%"></div></div>
         </div>
 
         <div class="card">
             <h2>Disk Usage</h2>
-            <div class="value">{{ metrics.disk.percent }}%</div>
-            <div class="sub">{{ metrics.disk.used_gb }} GB / {{ metrics.disk.total_gb }} GB</div>
-            <div class="bar"><div class="bar-fill {{ 'bad' if metrics.disk.percent > 90 else 'warn' if metrics.disk.percent > 70 else 'good' }}" style="width: {{ metrics.disk.percent }}%"></div></div>
+            <div class="value" id="disk-value">{{ metrics.disk.percent }}%</div>
+            <div class="sub" id="disk-sub">{{ metrics.disk.used_gb }} GB / {{ metrics.disk.total_gb }} GB</div>
+            <div class="bar"><div class="bar-fill {{ 'bad' if metrics.disk.percent > 90 else 'warn' if metrics.disk.percent > 70 else 'good' }}" id="disk-bar" style="width: {{ metrics.disk.percent }}%"></div></div>
         </div>
     </div>
 
-    <details class="alerts-panel" {% if recent_alerts %}open{% endif %}>
+    <details class="alerts-panel" id="alerts-panel" {% if recent_alerts %}open{% endif %}>
         <summary class="alerts-summary">
             <span class="alerts-title">Alerts</span>
-            <div class="alerts-meta">
+            <div class="alerts-meta" id="alerts-meta">
                 {% set crit_count = recent_alerts | selectattr('severity', 'equalto', 'critical') | list | length %}
                 {% set warn_count = recent_alerts | rejectattr('severity', 'equalto', 'critical') | list | length %}
                 {% if crit_count > 0 %}<span class="badge badge-critical">{{ crit_count }} critical</span>{% endif %}
@@ -44,6 +44,7 @@
                 <span class="alerts-chevron">&#8964;</span>
             </div>
         </summary>
+        <div id="alerts-body">
         {% if recent_alerts %}
         <div class="alerts-list">
             {% for alert in recent_alerts %}
@@ -57,6 +58,7 @@
         {% else %}
         <div class="alert-empty">No alerts recorded.</div>
         {% endif %}
+        </div>
     </details>
 
     <div class="logs">
@@ -163,7 +165,18 @@
         </div>
     </div>
 
-    <p class="refresh-note">Last updated: {{ metrics.timestamp }} | Refresh page to update</p>
+    <div class="refresh-bar">
+        <span id="last-updated">Last updated: {{ metrics.timestamp[0:19] | replace('T', ' ') }}</span>
+        <div class="refresh-controls">
+            <label for="autoRefreshSelect">Auto-refresh:</label>
+            <select id="autoRefreshSelect">
+                <option value="0">Off</option>
+                <option value="30" selected>30s</option>
+                <option value="60">1m</option>
+                <option value="300">5m</option>
+            </select>
+        </div>
+    </div>
 
     <script>
         let tailInterval = null;
@@ -534,6 +547,95 @@
 
         // Load charts on page load
         fetchTrafficData();
+
+        // ── Auto-refresh ──────────────────────────────────────────────────────
+
+        let autoRefreshTimer = null;
+
+        function barClass(pct) {
+            return 'bar-fill ' + (pct > 90 ? 'bad' : pct > 70 ? 'warn' : 'good');
+        }
+
+        function refreshMetrics() {
+            fetch('/api/metrics')
+                .then(r => r.json())
+                .then(m => {
+                    document.getElementById('cpu-value').textContent = m.cpu_percent + '%';
+                    const cpuBar = document.getElementById('cpu-bar');
+                    cpuBar.style.width = m.cpu_percent + '%';
+                    cpuBar.className = barClass(m.cpu_percent);
+
+                    document.getElementById('mem-value').textContent = m.memory.percent + '%';
+                    document.getElementById('mem-sub').textContent = m.memory.used_gb + ' GB / ' + m.memory.total_gb + ' GB';
+                    const memBar = document.getElementById('mem-bar');
+                    memBar.style.width = m.memory.percent + '%';
+                    memBar.className = barClass(m.memory.percent);
+
+                    document.getElementById('disk-value').textContent = m.disk.percent + '%';
+                    document.getElementById('disk-sub').textContent = m.disk.used_gb + ' GB / ' + m.disk.total_gb + ' GB';
+                    const diskBar = document.getElementById('disk-bar');
+                    diskBar.style.width = m.disk.percent + '%';
+                    diskBar.className = barClass(m.disk.percent);
+
+                    const now = new Date();
+                    document.getElementById('last-updated').textContent =
+                        'Last updated: ' + now.toLocaleTimeString();
+                })
+                .catch(() => {});
+        }
+
+        function refreshAlerts() {
+            fetch('/api/alerts')
+                .then(r => r.json())
+                .then(data => {
+                    const alerts = data.alerts.slice(0, 5);
+                    const critCount = alerts.filter(a => a.severity === 'critical').length;
+                    const warnCount = alerts.filter(a => a.severity !== 'critical').length;
+
+                    let metaHtml = '';
+                    if (critCount > 0) metaHtml += `<span class="badge badge-critical">${critCount} critical</span>`;
+                    if (warnCount > 0) metaHtml += `<span class="badge badge-warning">${warnCount} warning</span>`;
+                    if (alerts.length === 0) metaHtml += '<span class="badge badge-ok">All clear</span>';
+                    metaHtml += '<a href="/api/alerts" class="api-btn" onclick="event.stopPropagation()">API</a>';
+                    metaHtml += '<span class="alerts-chevron">&#8964;</span>';
+                    document.getElementById('alerts-meta').innerHTML = metaHtml;
+
+                    const bodyEl = document.getElementById('alerts-body');
+                    if (alerts.length > 0) {
+                        bodyEl.innerHTML = '<div class="alerts-list">' + alerts.map(a => {
+                            const ts = a.timestamp.substring(0, 16).replace('T', ' ');
+                            return `<div class="alert-row alert-${a.severity}">
+                                <span class="badge badge-${a.severity}">${a.severity.toUpperCase()}</span>
+                                <span class="alert-message">${a.message}</span>
+                                <span class="alert-time">${ts}</span>
+                            </div>`;
+                        }).join('') + '</div>';
+                    } else {
+                        bodyEl.innerHTML = '<div class="alert-empty">No alerts recorded.</div>';
+                    }
+                })
+                .catch(() => {});
+        }
+
+        function startAutoRefresh(seconds) {
+            if (autoRefreshTimer) clearInterval(autoRefreshTimer);
+            autoRefreshTimer = null;
+            if (seconds > 0) {
+                autoRefreshTimer = setInterval(() => {
+                    refreshMetrics();
+                    refreshAlerts();
+                }, seconds * 1000);
+            }
+        }
+
+        const autoRefreshSelect = document.getElementById('autoRefreshSelect');
+        const savedRefresh = localStorage.getItem('autoRefresh');
+        if (savedRefresh !== null) autoRefreshSelect.value = savedRefresh;
+        autoRefreshSelect.addEventListener('change', function() {
+            localStorage.setItem('autoRefresh', this.value);
+            startAutoRefresh(parseInt(this.value));
+        });
+        startAutoRefresh(parseInt(autoRefreshSelect.value));
     </script>
 </body>
 </html>

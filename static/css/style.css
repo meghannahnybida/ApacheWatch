@@ -346,11 +346,28 @@ details[open] .alerts-chevron {
     font-weight: 500; 
 }
 
-.refresh-note { 
-    text-align: center; 
-    color: #999; 
-    font-size: 12px; 
-    margin-top: 20px; 
+.refresh-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 20px;
+    color: #999;
+    font-size: 12px;
+}
+
+.refresh-controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.refresh-controls select {
+    padding: 3px 6px;
+    border: 1px solid #d1d5db;
+    border-radius: 4px;
+    font-size: 12px;
+    background: white;
+    color: #374151;
 }
 
 .stat-row { 

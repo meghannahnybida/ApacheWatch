@@ -510,7 +510,7 @@ def save_alerts(db_path, alerts, cooldown_minutes=30):
 
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
-    inserted = 0
+    inserted_alerts = []
 
     for alert in alerts:
         if cooldown_cutoff:
@@ -534,11 +534,11 @@ def save_alerts(db_path, alerts, cooldown_minutes=30):
             alert.get("value"),
             alert.get("threshold")
         ))
-        inserted += 1
+        inserted_alerts.append(alert)
 
     conn.commit()
     conn.close()
-    return inserted
+    return inserted_alerts
 
 def get_recent_alerts(db_path, limit=50):
     """Get recent alerts from the database."""
@@ -719,37 +719,83 @@ def aggregate_access_logs(db_path, log_path, max_lines=10000):
     conn.close()
 
 def get_traffic_chart_data(db_path, hours=24):
-    """Get traffic data for charts."""
+    """Get traffic data for charts. Hourly resolution for <=72h, daily buckets for longer ranges."""
     init_database(db_path)
 
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
 
-    # Get last N hours of data
-    cursor.execute('''
-        SELECT * FROM access_logs_hourly
-        ORDER BY hour_timestamp DESC
-        LIMIT ?
-    ''', (hours,))
+    use_daily = hours > 72
 
-    rows = cursor.fetchall()
-    conn.close()
+    if use_daily:
+        if hours >= 10000:
+            cursor.execute('''
+                SELECT
+                    date(hour_timestamp)      AS day,
+                    SUM(request_count)        AS request_count,
+                    SUM(status_success)       AS status_success,
+                    SUM(status_redirects)     AS status_redirects,
+                    SUM(status_client_errors) AS status_client_errors,
+                    SUM(status_server_errors) AS status_server_errors,
+                    MAX(unique_ips)           AS unique_ips
+                FROM access_logs_hourly
+                GROUP BY date(hour_timestamp)
+                ORDER BY day ASC
+            ''')
+        else:
+            days = hours // 24
+            cursor.execute('''
+                SELECT
+                    date(hour_timestamp)      AS day,
+                    SUM(request_count)        AS request_count,
+                    SUM(status_success)       AS status_success,
+                    SUM(status_redirects)     AS status_redirects,
+                    SUM(status_client_errors) AS status_client_errors,
+                    SUM(status_server_errors) AS status_server_errors,
+                    MAX(unique_ips)           AS unique_ips
+                FROM access_logs_hourly
+                GROUP BY date(hour_timestamp)
+                ORDER BY day DESC
+                LIMIT ?
+            ''', (days,))
 
-    # Convert to list and reverse to get chronological order
-    data = []
-    for row in reversed(rows):
-        data.append({
-            'hour': row['hour_timestamp'],
-            'requests': row['request_count'],
-            'status_success': row['status_success'],
-            'status_redirects': row['status_redirects'],
-            'status_client_errors': row['status_client_errors'],
-            'status_server_errors': row['status_server_errors'],
-            'unique_ips': row['unique_ips']
-        })
+        rows = cursor.fetchall()
+        conn.close()
+        data = [
+            {
+                'hour': row['day'],
+                'requests': row['request_count'],
+                'status_success': row['status_success'],
+                'status_redirects': row['status_redirects'],
+                'status_client_errors': row['status_client_errors'],
+                'status_server_errors': row['status_server_errors'],
+                'unique_ips': row['unique_ips']
+            }
+            for row in reversed(rows)
+        ]
+    else:
+        cursor.execute('''
+            SELECT * FROM access_logs_hourly
+            ORDER BY hour_timestamp DESC
+            LIMIT ?
+        ''', (hours,))
+        rows = cursor.fetchall()
+        conn.close()
+        data = [
+            {
+                'hour': row['hour_timestamp'],
+                'requests': row['request_count'],
+                'status_success': row['status_success'],
+                'status_redirects': row['status_redirects'],
+                'status_client_errors': row['status_client_errors'],
+                'status_server_errors': row['status_server_errors'],
+                'unique_ips': row['unique_ips']
+            }
+            for row in reversed(rows)
+        ]
 
-    return data
+    return data, 'daily' if use_daily else 'hourly'
 
 # =============================================================================
 # FLASK APP
@@ -841,10 +887,11 @@ def api_traffic_chart():
     from flask import request
 
     hours = int(request.args.get('hours', 24))
-    data = get_traffic_chart_data(config["database"], hours=hours)
+    data, resolution = get_traffic_chart_data(config["database"], hours=hours)
 
     return jsonify({
         'data': data,
+        'resolution': resolution,
         'count': len(data)
     })
 

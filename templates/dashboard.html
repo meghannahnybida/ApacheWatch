@@ -109,18 +109,20 @@
     </div>
 
     <div class="chart-card">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-            <h2 style="margin: 0;">Traffic Over Time</h2>
-            <div style="display: flex; align-items: center; gap: 8px;">
-                <label for="timeRange" style="font-size: 13px; color: #666;">Time Range:</label>
-                <select id="timeRange" style="padding: 6px 12px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 13px; background: white; cursor: pointer;">
-                    <option value="24">Last 24 Hours</option>
-                    <option value="72">Last 3 Days</option>
-                    <option value="168" selected>Last 7 Days</option>
-                    <option value="336">Last 14 Days</option>
-                    <option value="720">Last 30 Days</option>
-                    <option value="all">All Time</option>
+        <div class="chart-card-header">
+            <h2>Traffic Over Time</h2>
+            <div class="chart-card-controls">
+                <select id="trafficTimeRange" class="chart-time-select">
+                    <option value="24">24h</option>
+                    <option value="72">3d</option>
+                    <option value="168" selected>7d</option>
+                    <option value="336">14d</option>
+                    <option value="720">30d</option>
+                    <option value="all">All</option>
                 </select>
+                <button class="expand-btn" onclick="openChartModal('traffic', 'Traffic Over Time')" title="Expand">
+                    <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M1 5V1h4M9 1h4v4M1 9v4h4M9 13h4V9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </button>
             </div>
         </div>
         <div class="chart-container">
@@ -128,15 +130,45 @@
         </div>
     </div>
 
-    <div class="grid" style="margin-top: 30px;">
+    <div class="grid" style="margin-top: 20px;">
         <div class="chart-card" style="margin-top: 0;">
-            <h2>Status Codes Over Time</h2>
+            <div class="chart-card-header">
+                <h2>Status Codes Over Time</h2>
+                <div class="chart-card-controls">
+                    <select id="statusTimeRange" class="chart-time-select">
+                        <option value="24">24h</option>
+                        <option value="72">3d</option>
+                        <option value="168" selected>7d</option>
+                        <option value="336">14d</option>
+                        <option value="720">30d</option>
+                        <option value="all">All</option>
+                    </select>
+                    <button class="expand-btn" onclick="openChartModal('status', 'Status Codes Over Time')" title="Expand">
+                        <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M1 5V1h4M9 1h4v4M1 9v4h4M9 13h4V9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                    </button>
+                </div>
+            </div>
             <div class="chart-container" style="height: 250px;">
                 <canvas id="statusChart"></canvas>
             </div>
         </div>
         <div class="chart-card" style="margin-top: 0;">
-            <h2>Unique Visitors Per Hour</h2>
+            <div class="chart-card-header">
+                <h2>Unique Visitors Per Hour</h2>
+                <div class="chart-card-controls">
+                    <select id="visitorsTimeRange" class="chart-time-select">
+                        <option value="24">24h</option>
+                        <option value="72">3d</option>
+                        <option value="168" selected>7d</option>
+                        <option value="336">14d</option>
+                        <option value="720">30d</option>
+                        <option value="all">All</option>
+                    </select>
+                    <button class="expand-btn" onclick="openChartModal('visitors', 'Unique Visitors Per Hour')" title="Expand">
+                        <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M1 5V1h4M9 1h4v4M1 9v4h4M9 13h4V9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                    </button>
+                </div>
+            </div>
             <div class="chart-container" style="height: 250px;">
                 <canvas id="visitorsChart"></canvas>
             </div>
@@ -363,64 +395,55 @@
 
         // Initialize and load traffic charts
         let trafficChart, statusChart, visitorsChart;
+        const chartConfigs = {};
 
-        // Time range selector
-        const timeRangeSelect = document.getElementById('timeRange');
-
-        // Load saved time range preference
-        const savedTimeRange = localStorage.getItem('timeRange');
-        if (savedTimeRange) {
-            timeRangeSelect.value = savedTimeRange;
+        function chartApiUrl(hours) {
+            return hours === 'all' ? '/api/traffic-chart?hours=10000' : `/api/traffic-chart?hours=${hours}`;
         }
 
-        // Listen for time range changes
-        timeRangeSelect.addEventListener('change', function() {
-            localStorage.setItem('timeRange', this.value);
-            fetchTrafficData();
-        });
+        function buildLabels(data, resolution) {
+            return data.map(item => {
+                if (resolution === 'daily') {
+                    const [y, m, d] = item.hour.split('-').map(Number);
+                    return new Date(y, m - 1, d).toLocaleString('en-US', { month: 'short', day: 'numeric' });
+                }
+                return new Date(item.hour).toLocaleString('en-US', {
+                    month: 'short', day: 'numeric',
+                    hour: '2-digit', minute: '2-digit', hour12: false
+                });
+            });
+        }
 
-        function fetchTrafficData() {
-            const hours = timeRangeSelect.value;
-            const apiUrl = hours === 'all' ? '/api/traffic-chart?hours=10000' : `/api/traffic-chart?hours=${hours}`;
+        function initTimeSelect(id, storageKey, fetchFn) {
+            const sel = document.getElementById(id);
+            const saved = localStorage.getItem(storageKey);
+            if (saved) sel.value = saved;
+            sel.addEventListener('change', function() {
+                localStorage.setItem(storageKey, this.value);
+                fetchFn();
+            });
+            return sel;
+        }
 
-            fetch(apiUrl)
-                .then(response => response.json())
+        const trafficTimeSelect  = initTimeSelect('trafficTimeRange',  'trafficTimeRange',  () => fetchTrafficChart());
+        const statusTimeSelect   = initTimeSelect('statusTimeRange',   'statusTimeRange',   () => fetchStatusChart());
+        const visitorsTimeSelect = initTimeSelect('visitorsTimeRange', 'visitorsTimeRange', () => fetchVisitorsChart());
+
+        function fetchTrafficChart() {
+            fetch(chartApiUrl(trafficTimeSelect.value))
+                .then(r => r.json())
                 .then(result => {
                     const data = result.data;
-
-                    if (!data || data.length === 0) {
-                        return;
-                    }
-
-                    // Extract labels (hours) and data
-                    const labels = data.map(item => {
-                        const date = new Date(item.hour);
-                        return date.toLocaleString('en-US', {
-                            month: 'short',
-                            day: 'numeric',
-                            hour: '2-digit',
-                            minute: '2-digit',
-                            hour12: false
-                        });
-                    });
-
-                    const requests = data.map(item => item.requests);
-                    const statusSuccess = data.map(item => item.status_success);
-                    const statusRedirects = data.map(item => item.status_redirects);
-                    const statusClientErrors = data.map(item => item.status_client_errors);
-                    const statusServerErrors = data.map(item => item.status_server_errors);
-                    const uniqueIps = data.map(item => item.unique_ips);
-
-                    // Traffic Chart
+                    if (!data || data.length === 0) return;
+                    const labels = buildLabels(data, result.resolution);
                     const trafficCtx = document.getElementById('trafficChart').getContext('2d');
-                    if (trafficChart) trafficChart.destroy();
-                    trafficChart = new Chart(trafficCtx, {
+                    chartConfigs.traffic = {
                         type: 'line',
                         data: {
-                            labels: labels,
+                            labels,
                             datasets: [{
                                 label: 'Total Requests',
-                                data: requests,
+                                data: data.map(i => i.requests),
                                 borderColor: '#3b82f6',
                                 backgroundColor: 'rgba(59, 130, 246, 0.1)',
                                 tension: 0.3,
@@ -430,91 +453,66 @@
                         options: {
                             responsive: true,
                             maintainAspectRatio: false,
-                            plugins: {
-                                legend: {
-                                    display: true,
-                                    position: 'top'
-                                }
-                            },
-                            scales: {
-                                y: {
-                                    beginAtZero: true,
-                                    ticks: {
-                                        precision: 0
-                                    }
-                                }
-                            }
+                            plugins: { legend: { display: true, position: 'top' } },
+                            scales: { y: { beginAtZero: true, ticks: { precision: 0 } } }
                         }
-                    });
+                    };
+                    if (trafficChart) trafficChart.destroy();
+                    trafficChart = new Chart(trafficCtx, JSON.parse(JSON.stringify(chartConfigs.traffic)));
+                })
+                .catch(error => console.error('Error fetching traffic data:', error));
+        }
 
-                    // Status Codes Chart
+        function fetchStatusChart() {
+            fetch(chartApiUrl(statusTimeSelect.value))
+                .then(r => r.json())
+                .then(result => {
+                    const data = result.data;
+                    if (!data || data.length === 0) return;
+                    const labels = buildLabels(data, result.resolution);
                     const statusCtx = document.getElementById('statusChart').getContext('2d');
-                    if (statusChart) statusChart.destroy();
-                    statusChart = new Chart(statusCtx, {
+                    chartConfigs.status = {
                         type: 'bar',
                         data: {
-                            labels: labels,
+                            labels,
                             datasets: [
-                                {
-                                    label: 'Success (200-299)',
-                                    data: statusSuccess,
-                                    backgroundColor: 'rgba(16, 185, 129, 0.7)',
-                                    stack: 'stack0'
-                                },
-                                {
-                                    label: 'Redirects (300-399)',
-                                    data: statusRedirects,
-                                    backgroundColor: 'rgba(59, 130, 246, 0.7)',
-                                    stack: 'stack0'
-                                },
-                                {
-                                    label: 'Client Errors (400-499)',
-                                    data: statusClientErrors,
-                                    backgroundColor: 'rgba(245, 158, 11, 0.7)',
-                                    stack: 'stack0'
-                                },
-                                {
-                                    label: 'Server Errors (500-599)',
-                                    data: statusServerErrors,
-                                    backgroundColor: 'rgba(239, 68, 68, 0.7)',
-                                    stack: 'stack0'
-                                }
+                                { label: 'Success (200-299)',      data: data.map(i => i.status_success),       backgroundColor: 'rgba(16, 185, 129, 0.7)', stack: 'stack0' },
+                                { label: 'Redirects (300-399)',    data: data.map(i => i.status_redirects),     backgroundColor: 'rgba(59, 130, 246, 0.7)',  stack: 'stack0' },
+                                { label: 'Client Errors (400-499)', data: data.map(i => i.status_client_errors), backgroundColor: 'rgba(245, 158, 11, 0.7)', stack: 'stack0' },
+                                { label: 'Server Errors (500-599)', data: data.map(i => i.status_server_errors), backgroundColor: 'rgba(239, 68, 68, 0.7)',  stack: 'stack0' }
                             ]
                         },
                         options: {
                             responsive: true,
                             maintainAspectRatio: false,
-                            plugins: {
-                                legend: {
-                                    display: true,
-                                    position: 'top'
-                                }
-                            },
+                            plugins: { legend: { display: true, position: 'top' } },
                             scales: {
-                                x: {
-                                    stacked: true
-                                },
-                                y: {
-                                    stacked: true,
-                                    beginAtZero: true,
-                                    ticks: {
-                                        precision: 0
-                                    }
-                                }
+                                x: { stacked: true },
+                                y: { stacked: true, beginAtZero: true, ticks: { precision: 0 } }
                             }
                         }
-                    });
+                    };
+                    if (statusChart) statusChart.destroy();
+                    statusChart = new Chart(statusCtx, JSON.parse(JSON.stringify(chartConfigs.status)));
+                })
+                .catch(error => console.error('Error fetching status data:', error));
+        }
 
-                    // Unique Visitors Chart
+        function fetchVisitorsChart() {
+            fetch(chartApiUrl(visitorsTimeSelect.value))
+                .then(r => r.json())
+                .then(result => {
+                    const data = result.data;
+                    if (!data || data.length === 0) return;
+                    const labels = buildLabels(data, result.resolution);
                     const visitorsCtx = document.getElementById('visitorsChart').getContext('2d');
-                    if (visitorsChart) visitorsChart.destroy();
-                    visitorsChart = new Chart(visitorsCtx, {
+                    chartConfigs.visitors = {
                         type: 'bar',
                         data: {
-                            labels: labels,
+                            labels,
                             datasets: [{
                                 label: 'Unique IPs',
-                                data: uniqueIps,
+                                data: data.map(i => i.unique_ips),
                                 backgroundColor: 'rgba(139, 92, 246, 0.7)',
                                 borderColor: 'rgba(139, 92, 246, 1)',
                                 borderWidth: 1
@@ -523,30 +521,20 @@
                         options: {
                             responsive: true,
                             maintainAspectRatio: false,
-                            plugins: {
-                                legend: {
-                                    display: true,
-                                    position: 'top'
-                                }
-                            },
-                            scales: {
-                                y: {
-                                    beginAtZero: true,
-                                    ticks: {
-                                        precision: 0
-                                    }
-                                }
-                            }
+                            plugins: { legend: { display: true, position: 'top' } },
+                            scales: { y: { beginAtZero: true, ticks: { precision: 0 } } }
                         }
-                    });
+                    };
+                    if (visitorsChart) visitorsChart.destroy();
+                    visitorsChart = new Chart(visitorsCtx, JSON.parse(JSON.stringify(chartConfigs.visitors)));
                 })
-                .catch(error => {
-                    console.error('Error fetching traffic data:', error);
-                });
+                .catch(error => console.error('Error fetching visitors data:', error));
         }
 
         // Load charts on page load
-        fetchTrafficData();
+        fetchTrafficChart();
+        fetchStatusChart();
+        fetchVisitorsChart();
 
         // ── Auto-refresh ──────────────────────────────────────────────────────
 
@@ -636,6 +624,44 @@
             startAutoRefresh(parseInt(this.value));
         });
         startAutoRefresh(parseInt(autoRefreshSelect.value));
+
+        // ── Chart modal ───────────────────────────────────────────────────────
+
+        let modalChartInstance = null;
+
+        function openChartModal(key, title) {
+            const cfg = chartConfigs[key];
+            if (!cfg) return;
+
+            document.getElementById('modal-chart-title').textContent = title;
+            document.getElementById('chart-modal').classList.add('open');
+            document.body.style.overflow = 'hidden';
+
+            if (modalChartInstance) { modalChartInstance.destroy(); modalChartInstance = null; }
+            const ctx = document.getElementById('modalChart').getContext('2d');
+            modalChartInstance = new Chart(ctx, JSON.parse(JSON.stringify(cfg)));
+        }
+
+        function closeChartModal() {
+            document.getElementById('chart-modal').classList.remove('open');
+            document.body.style.overflow = '';
+            if (modalChartInstance) { modalChartInstance.destroy(); modalChartInstance = null; }
+        }
+
+        document.addEventListener('keydown', e => { if (e.key === 'Escape') closeChartModal(); });
     </script>
+
+    <div id="chart-modal" class="chart-modal">
+        <div class="chart-modal-backdrop" onclick="closeChartModal()"></div>
+        <div class="chart-modal-dialog">
+            <div class="chart-modal-header">
+                <span id="modal-chart-title"></span>
+                <button class="chart-modal-close" onclick="closeChartModal()">&times;</button>
+            </div>
+            <div class="chart-modal-body">
+                <canvas id="modalChart"></canvas>
+            </div>
+        </div>
+    </div>
 </body>
 </html>

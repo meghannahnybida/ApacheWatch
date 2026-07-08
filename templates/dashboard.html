@@ -7,7 +7,7 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 </head>
 <body>
-    <h1>🖥️ ApacheWatch - {{ server_name }}</h1>
+    <h1>ApacheWatch - {{ server_name }}</h1>
 
     <div class="grid">
         <div class="card">
@@ -31,25 +31,33 @@
         </div>
     </div>
 
-    <div class="alerts-panel">
-        <div class="alerts-header">
-            <h2>Recent Alerts</h2>
-            <a href="/api/alerts">JSON</a>
-        </div>
+    <details class="alerts-panel" {% if recent_alerts %}open{% endif %}>
+        <summary class="alerts-summary">
+            <span class="alerts-title">Alerts</span>
+            <div class="alerts-meta">
+                {% set crit_count = recent_alerts | selectattr('severity', 'equalto', 'critical') | list | length %}
+                {% set warn_count = recent_alerts | rejectattr('severity', 'equalto', 'critical') | list | length %}
+                {% if crit_count > 0 %}<span class="badge badge-critical">{{ crit_count }} critical</span>{% endif %}
+                {% if warn_count > 0 %}<span class="badge badge-warning">{{ warn_count }} warning</span>{% endif %}
+                {% if not recent_alerts %}<span class="badge badge-ok">All clear</span>{% endif %}
+                <a href="/api/alerts" class="api-btn" onclick="event.stopPropagation()">API</a>
+                <span class="alerts-chevron">&#8964;</span>
+            </div>
+        </summary>
         {% if recent_alerts %}
         <div class="alerts-list">
             {% for alert in recent_alerts %}
             <div class="alert-row alert-{{ alert.severity }}">
-                <span class="alert-severity">{{ alert.severity.upper() }}</span>
+                <span class="badge badge-{{ alert.severity }}">{{ alert.severity.upper() }}</span>
                 <span class="alert-message">{{ alert.message }}</span>
-                <span class="alert-time">{{ alert.timestamp }}</span>
+                <span class="alert-time">{{ alert.timestamp[0:16] | replace('T', ' ') }}</span>
             </div>
             {% endfor %}
         </div>
         {% else %}
         <div class="alert-empty">No alerts recorded.</div>
         {% endif %}
-    </div>
+    </details>
 
     <div class="logs">
         <div class="logs-header">
@@ -138,8 +146,8 @@
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
                 <h2 style="margin: 0;">Top Visitors (by IP)</h2>
                 <div id="botStats" style="font-size: 12px; color: #666;">
-                    <span style="color: #10b981;">👤 <span id="humanCount">-</span></span>
-                    <span style="margin-left: 10px; color: #f59e0b;">🤖 <span id="botCount">-</span></span>
+                    <span style="color: #10b981;">Human: <span id="humanCount">-</span></span>
+                    <span style="margin-left: 10px; color: #f59e0b;">Bot: <span id="botCount">-</span></span>
                     <span style="margin-left: 5px;">(<span id="botPercentage">-</span>%)</span>
                 </div>
             </div>

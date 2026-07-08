@@ -78,50 +78,89 @@ h1 {
 .alerts-panel {
     background: white;
     border-radius: 8px;
-    padding: 20px;
     box-shadow: 0 2px 4px rgba(0,0,0,0.1);
     margin-bottom: 30px;
 }
 
-.alerts-header {
+.alerts-summary {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 12px;
+    padding: 16px 20px;
+    cursor: pointer;
+    list-style: none;
+    user-select: none;
 }
 
-.alerts-header h2 {
+.alerts-summary::-webkit-details-marker { display: none; }
+.alerts-summary::marker { display: none; }
+
+.alerts-title {
     font-size: 14px;
-    color: #666;
-    margin: 0;
+    font-weight: 600;
+    color: #374151;
 }
 
-.alerts-header a {
-    color: #3b82f6;
-    font-size: 12px;
-    text-decoration: none;
+.alerts-meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.alerts-chevron {
+    font-size: 18px;
+    color: #9ca3af;
+    transition: transform 0.2s;
+    line-height: 1;
+}
+
+details[open] .alerts-chevron {
+    transform: rotate(180deg);
+}
+
+.badge {
+    font-size: 11px;
+    font-weight: 600;
+    padding: 3px 8px;
+    border-radius: 10px;
+}
+
+.badge-critical {
+    background: #fee2e2;
+    color: #dc2626;
+}
+
+.badge-warning {
+    background: #fef3c7;
+    color: #b45309;
+}
+
+.badge-ok {
+    background: #d1fae5;
+    color: #059669;
 }
 
 .alerts-list {
+    border-top: 1px solid #f3f4f6;
+    padding: 12px 20px 16px;
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 6px;
 }
 
 .alert-row {
     display: grid;
     grid-template-columns: auto minmax(0, 1fr) auto;
-    gap: 10px;
+    gap: 12px;
     align-items: center;
-    padding: 10px 12px;
-    border: 1px solid #e5e7eb;
-    border-left-width: 4px;
-    border-radius: 6px;
+    padding: 9px 12px;
+    border-left: 3px solid transparent;
+    border-radius: 4px;
     font-size: 13px;
 }
 
 .alert-critical {
-    border-left-color: #ef4444;
+    border-left-color: #dc2626;
     background: #fef2f2;
 }
 
@@ -130,22 +169,33 @@ h1 {
     background: #fffbeb;
 }
 
-.alert-severity {
-    font-size: 10px;
-    font-weight: 700;
-    color: #374151;
-}
-
 .alert-message {
-    color: #333;
+    color: #374151;
     overflow: hidden;
     text-overflow: ellipsis;
 }
 
 .alert-time,
 .alert-empty {
-    color: #999;
+    color: #9ca3af;
     font-size: 12px;
+    white-space: nowrap;
+}
+
+.api-btn {
+    font-size: 11px;
+    color: #9ca3af;
+    text-decoration: none;
+    border: 1px solid #e5e7eb;
+    padding: 3px 8px;
+    border-radius: 4px;
+    background: #f9fafb;
+    transition: all 0.2s;
+}
+
+.api-btn:hover {
+    color: #6b7280;
+    border-color: #d1d5db;
 }
 
 .logs { 

@@ -53,6 +53,16 @@ apache:
 
 database: "./data/apachewatch.db"  # SQLite database for metrics history
 
+alerts:
+  enabled: true
+  cooldown_minutes: 30
+  thresholds:
+    disk_percent: 85
+    server_errors_5xx: 5
+    client_errors_4xx: 50
+    requests_per_ip: 100
+    bot_percentage: 75
+
 web:
   host: "0.0.0.0"  # Use 127.0.0.1 for local-only access
   port: 8080
@@ -66,6 +76,7 @@ web:
 - `GET /api/history` - Metrics history (JSON)
 - `GET /api/access-stats` - Access log analytics (top IPs, pages, status codes)
 - `GET /api/traffic-chart?hours=24` - Traffic chart data (JSON, default 24 hours)
+- `GET /api/alerts` - Recent local alerts saved in SQLite
 
 ## Log Permissions
 
@@ -107,6 +118,19 @@ python generate_logs.py
 
 This creates sample Apache logs in the `./logs/` directory.
 
+### Test Alerts Locally
+
+Alerts are evaluated when the dashboard or `/api/alerts` is requested. To verify alerting with test logs, temporarily lower thresholds in `config.yaml`, for example:
+
+```yaml
+alerts:
+  thresholds:
+    requests_per_ip: 2
+    client_errors_4xx: 1
+```
+
+Refresh the dashboard, then check the Recent Alerts panel or open `http://localhost:8080/api/alerts`.
+
 ## Features
 
 - **Real-time Monitoring**: Live CPU, memory, and disk metrics
@@ -117,5 +141,6 @@ This creates sample Apache logs in the `./logs/` directory.
   - Shows hostname for each visitor IP
   - Tracks bot vs human traffic percentages
 - **Historical Data**: Track metrics over time with SQLite storage
+- **Local Alerts**: Save threshold-based alerts to SQLite and expose them through the dashboard/API
 - **Web Dashboard**: Clean, responsive interface for all metrics
 - **Docker Ready**: Full containerization support for easy deployment

@@ -7,6 +7,8 @@ A minimal, easy-to-understand implementation.
 import os
 import re
 import sqlite3
+import concurrent.futures
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import psutil
 import yaml
 from datetime import datetime, timedelta
@@ -105,6 +107,39 @@ def collect_metrics():
 # LOG PARSING
 # =============================================================================
 
+def _tail_file(log_path, max_lines):
+    """Read the last max_lines lines from a file without loading it into memory.
+
+    Seeks backwards from the end of the file in 8KB chunks, so a 2GB log file
+    costs the same as a 10KB one as long as max_lines is small.
+    """
+    with open(log_path, 'rb') as f:
+        f.seek(0, 2)  # Seek to end
+        size = f.tell()
+        if size == 0:
+            return []
+
+        block_size = 8192
+        blocks = []
+        remaining = size
+        newlines_seen = 0
+
+        while remaining > 0 and newlines_seen <= max_lines:
+            read_size = min(block_size, remaining)
+            remaining -= read_size
+            f.seek(remaining)
+            block = f.read(read_size)
+            blocks.insert(0, block)
+            newlines_seen += block.count(b'\n')
+
+        content = b''.join(blocks)
+        lines = content.split(b'\n')
+        # A trailing newline produces a spurious empty final entry — remove it
+        if lines and not lines[-1]:
+            lines = lines[:-1]
+        return [line.decode('utf-8', errors='replace') for line in lines[-max_lines:]]
+
+
 def parse_error_log(log_path, max_lines=100, level_filter=None):
     """Parse recent entries from Apache error log.
 
@@ -119,8 +154,7 @@ def parse_error_log(log_path, max_lines=100, level_filter=None):
         return entries
 
     try:
-        with open(log_path, 'r') as f:
-            lines = f.readlines()[-max_lines:]  # Get last N lines
+        lines = _tail_file(log_path, max_lines)
 
         # Pattern for Apache error log
         pattern = r'\[([^\]]+)\]\s+\[([^\]]+)\]\s+(.+)'
@@ -184,8 +218,7 @@ def parse_access_log(log_path, max_lines=1000):
         return entries
 
     try:
-        with open(log_path, 'r') as f:
-            lines = f.readlines()[-max_lines:]
+        lines = _tail_file(log_path, max_lines)
 
         # Apache common/combined log format pattern
         # IP - user [timestamp] "method path protocol" status size "referer" "user-agent"
@@ -214,9 +247,10 @@ def parse_access_log(log_path, max_lines=1000):
                 })
 
     except PermissionError:
-        pass  # Silently fail if we can't read the file
+        print(f"WARNING: Permission denied reading access log: {log_path}", flush=True)
+        print("  Try running with sudo, or add your user to the 'adm' group.", flush=True)
     except Exception as e:
-        pass  # Silently fail on parsing errors
+        print(f"WARNING: Could not parse access log {log_path}: {e}", flush=True)
 
     return entries
 
@@ -254,24 +288,45 @@ def analyze_access_logs(entries):
     human_count = 0
 
     if IP_ANALYSIS_AVAILABLE:
-        # Analyze each unique IP
-        for ip, count in ip_counter.most_common(20):  # Top 20 IPs
-            # Find a user agent for this IP
-            user_agent = None
-            for entry in entries:
-                if entry["ip"] == ip and entry.get("user_agent"):
-                    user_agent = entry["user_agent"]
-                    break
+        # Pre-collect one user agent per unique IP to avoid scanning entries repeatedly
+        ip_user_agents = {}
+        for entry in entries:
+            ip = entry["ip"]
+            if ip not in ip_user_agents and entry.get("user_agent"):
+                ip_user_agents[ip] = entry["user_agent"]
 
-            # Analyze the IP
-            analysis = analyze_ip_visitor(ip, user_agent)
-            analysis["requests"] = count
-            enriched_ips.append(analysis)
+        top_ip_list = ip_counter.most_common(20)
 
-            # Track bot vs human
+        def _analyze_ip(ip_count):
+            ip, count = ip_count
+            result = analyze_ip_visitor(ip, ip_user_agents.get(ip))
+            result["requests"] = count
+            return result
+
+        # Run all DNS lookups in parallel (max 4 seconds total) instead of
+        # sequentially (up to 2s × 20 IPs = 40s worst case)
+        with ThreadPoolExecutor(max_workers=20) as executor:
+            future_map = {executor.submit(_analyze_ip, pair): pair[0] for pair in top_ip_list}
+            try:
+                for future in as_completed(future_map, timeout=4):
+                    try:
+                        enriched_ips.append(future.result())
+                    except Exception:
+                        pass
+            except concurrent.futures.TimeoutError:
+                # Collect whatever finished within the time limit
+                for future in future_map:
+                    if future.done():
+                        try:
+                            enriched_ips.append(future.result())
+                        except Exception:
+                            pass
+
+        for analysis in enriched_ips:
+            ip = analysis.get("ip", "")
             if analysis.get("is_bot"):
                 bot_count += sum(1 for e in entries if e["ip"] == ip)
-            elif analysis.get("is_bot") == False:
+            elif analysis.get("is_bot") is False:
                 human_count += sum(1 for e in entries if e["ip"] == ip)
     else:
         # Fallback without IP analysis
@@ -902,8 +957,24 @@ def api_traffic_chart():
 if __name__ == "__main__":
     print(f"Starting ApacheWatch...")
     print(f"Server: {config['server_name']}")
-    print(f"Dashboard: http://{config['web']['host']}:{config['web']['port']}")
+    print(f"Dashboard: http://localhost:{config['web']['port']}")
     print(f"Error log: {config['apache']['error_log']}")
+
+    # Check that log files exist and are readable before starting
+    for label, path in [
+        ("Error log",  config["apache"].get("error_log", "")),
+        ("Access log", config["apache"].get("access_log", "")),
+    ]:
+        if not path:
+            continue
+        if not os.path.exists(path):
+            print(f"  WARNING: {label} not found: {path}")
+        elif not os.access(path, os.R_OK):
+            print(f"  WARNING: {label} not readable (permission denied): {path}")
+            print( "    Try: sudo python apachewatch.py  or  sudo chmod o+r " + path)
+        else:
+            size_mb = os.path.getsize(path) / (1024 * 1024)
+            print(f"  {label}: {path} ({size_mb:.1f} MB) - OK")
 
     app.run(
         host=config["web"]["host"],

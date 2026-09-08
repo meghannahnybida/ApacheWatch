@@ -63,20 +63,20 @@
 
     <div class="logs">
         <div class="logs-header">
-            <h2>Recent Log Entries</h2>
+            <h2>Error Incidents</h2>
             <div style="display: flex; gap: 15px; align-items: center;">
                 <div style="display: flex; align-items: center; gap: 8px; font-size: 12px; color: #666;">
                     <label for="logSearch" style="display: flex; align-items: center; gap: 8px;">
-                        <input type="text" id="logSearch" placeholder="Search logs..." style="padding: 4px 8px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 12px; width: 200px;">
+                        <input type="text" id="logSearch" placeholder="Search incidents or URLs..." style="padding: 4px 8px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 12px; width: 200px;">
                     </label>
                 </div>
                 <div style="display: flex; align-items: center; gap: 8px; font-size: 12px; color: #666;">
                     <label for="logLimit">Show:</label>
                     <select id="logLimit" style="padding: 4px 8px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 12px; background: white;">
-                        <option value="10">10 lines</option>
-                        <option value="20" selected>20 lines</option>
-                        <option value="50">50 lines</option>
-                        <option value="100">100 lines</option>
+                        <option value="10">10 incidents</option>
+                        <option value="20" selected>20 incidents</option>
+                        <option value="50">50 incidents</option>
+                        <option value="100">100 incidents</option>
                     </select>
                 </div>
                 <div class="tail-toggle">
@@ -96,16 +96,7 @@
             <a href="/?level=notice" class="filter-btn {% if current_filter == 'notice' %}active{% endif %}">Notice</a>
             <a href="/?level=info" class="filter-btn {% if current_filter == 'info' %}active{% endif %}">Info</a>
         </div>
-        <div id="logEntries">
-        {% for entry in logs|reverse %}
-        <div class="log-entry">
-            <span class="level level-{{ entry.level }}">{{ entry.level.upper() }}</span>
-            {{ entry.message }}
-        </div>
-        {% else %}
-        <div class="log-entry">No log entries found or unable to read log file.</div>
-        {% endfor %}
-        </div>
+        <div id="logEntries"><div class="log-entry">Loading incidents...</div></div>
     </div>
 
     <div class="chart-card">
@@ -217,7 +208,7 @@
         const logEntries = document.getElementById('logEntries');
         const logLimit = document.getElementById('logLimit');
         const logSearch = document.getElementById('logSearch');
-        let currentLogs = []; // Store current logs for filtering
+        let currentLogs = []; // Incident groups currently loaded
 
         // Load saved preferences
         const savedTailMode = localStorage.getItem('tailMode') === 'true';
@@ -282,7 +273,7 @@
                 filteredLogs = currentLogs.filter(entry => {
                     return entry.message.toLowerCase().includes(searchTerm) ||
                            entry.level.toLowerCase().includes(searchTerm) ||
-                           (entry.timestamp && entry.timestamp.toLowerCase().includes(searchTerm));
+                           entry.affected_urls.some(url => url.toLowerCase().includes(searchTerm));
                 });
             }
 
@@ -291,12 +282,32 @@
                 return;
             }
 
-            logEntries.innerHTML = filteredLogs.map(entry => `
-                <div class="log-entry">
-                    <span class="level level-${entry.level}">${entry.level.toUpperCase()}</span>
-                    ${entry.message}
-                </div>
-            `).join('');
+            logEntries.innerHTML = filteredLogs.map(entry => {
+                const maxTrend = Math.max(...entry.trend, 1);
+                const bars = entry.trend.map(value => `<span style="height:${Math.max(3, value / maxTrend * 22)}px" title="${value} occurrence${value === 1 ? '' : 's'}"></span>`).join('');
+                const urls = entry.affected_urls.length
+                    ? `<div class="incident-urls"><strong>Affected URLs:</strong> ${entry.affected_urls.map(escapeHtml).join(', ')}</div>`
+                    : '<div class="incident-urls incident-muted">No request URL found in these log entries</div>';
+                return `<div class="incident-card">
+                    <div class="incident-main"><span class="level level-${escapeHtml(entry.level)}">${escapeHtml(entry.level.toUpperCase())}</span>
+                    <span class="incident-message">${escapeHtml(entry.message)}</span>
+                    <span class="incident-count">${entry.count}&times;</span></div>
+                    ${urls}
+                    <div class="incident-meta"><span>First: ${formatIncidentTime(entry.first_seen)}</span><span>Last: ${formatIncidentTime(entry.last_seen)}</span>
+                    <span class="incident-trend" aria-label="Occurrence trend">${bars}</span></div>
+                </div>`;
+            }).join('');
+        }
+
+        function escapeHtml(value) {
+            const node = document.createElement('div');
+            node.textContent = value == null ? '' : String(value);
+            return node.innerHTML;
+        }
+
+        function formatIncidentTime(value) {
+            if (!value) return 'Unknown';
+            return new Date(value).toLocaleString();
         }
 
         function fetchLogs() {
@@ -305,7 +316,7 @@
             const level = urlParams.get('level');
             const limit = logLimit.value;
 
-            let apiUrl = '/api/logs?';
+            let apiUrl = '/api/incidents?';
             const params = [];
             if (level) params.push(`level=${level}`);
             if (limit) params.push(`limit=${limit}`);
@@ -313,10 +324,10 @@
 
             fetch(apiUrl)
                 .then(response => response.json())
-                .then(logs => {
+                .then(data => {
                     // Get last N entries based on user preference
                     const limit = parseInt(logLimit.value);
-                    currentLogs = logs.slice(-limit).reverse();
+                    currentLogs = data.incidents.slice(0, limit);
                     filterAndDisplayLogs();
                 })
                 .catch(error => {

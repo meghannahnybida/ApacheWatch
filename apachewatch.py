@@ -7,6 +7,7 @@ A minimal, easy-to-understand implementation.
 import os
 import re
 import sqlite3
+import hashlib
 import concurrent.futures
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import psutil
@@ -173,7 +174,7 @@ def parse_error_log(log_path, max_lines=100, level_filter=None):
                 entries.append({
                     "timestamp": timestamp_str,
                     "level": level,
-                    "message": message[:200]  # Truncate long messages
+                    "message": message[:500]  # Keep enough context for incident grouping
                 })
             else:
                 # Line didn't match pattern, store as-is
@@ -201,6 +202,96 @@ def parse_error_log(log_path, max_lines=100, level_filter=None):
         })
 
     return entries
+
+
+def parse_error_timestamp(value):
+    """Parse the timestamp formats commonly emitted by Apache error logs."""
+    if not value:
+        return None
+    cleaned = value.strip()
+    for fmt in ("%a %b %d %H:%M:%S.%f %Y", "%a %b %d %H:%M:%S %Y", "%Y-%m-%dT%H:%M:%S.%f", "%Y-%m-%dT%H:%M:%S"):
+        try:
+            return datetime.strptime(cleaned, fmt)
+        except ValueError:
+            continue
+    return None
+
+
+def extract_affected_urls(message):
+    """Extract request paths from common Apache error-message patterns."""
+    candidates = []
+    patterns = (
+        r"\bURL\s+(['\"]?)(/[^\s'\")]+)\1",
+        r"\baccess to\s+(/[^\s'\")]+)",
+        r"\brequest(?:ed)?(?: URI)?\s+(['\"]?)(/[^\s'\")]+)\1",
+        r"\buri\s+(['\"]?)(/[^\s'\")]+)\1",
+        r"(/var/www/(?:html|htdocs)/[^\s:'\")]+)",
+    )
+    for pattern in patterns:
+        for match in re.finditer(pattern, message, flags=re.IGNORECASE):
+            path = match.group(match.lastindex or 0).rstrip(".,;:")
+            if path.startswith("/var/www/html/"):
+                path = path[len("/var/www/html"):]
+            elif path.startswith("/var/www/htdocs/"):
+                path = path[len("/var/www/htdocs"):]
+            if path not in candidates:
+                candidates.append(path)
+    return candidates
+
+
+def normalize_error_message(message):
+    """Remove request-specific values so repeated errors share an incident."""
+    normalized = re.sub(r"(?:\s*\[(?:pid|client|remote)\s+[^\]]+\])+\s*", " ", message, flags=re.IGNORECASE)
+    normalized = re.sub(r"(\bURL\s+)(['\"]?)/[^\s'\")]+\2", r"\1<url>", normalized, flags=re.IGNORECASE)
+    normalized = re.sub(r"(\baccess to\s+)/[^\s'\")]+", r"\1<url>", normalized, flags=re.IGNORECASE)
+    normalized = re.sub(r"(\brequest(?:ed)?(?: URI)?\s+)(['\"]?)/[^\s'\")]+\2", r"\1<url>", normalized, flags=re.IGNORECASE)
+    normalized = re.sub(r"/var/www/(?:html|htdocs)/[^\s:'\")]+", "<url>", normalized, flags=re.IGNORECASE)
+    normalized = re.sub(r"\bline\s+\d+\b", "line <n>", normalized, flags=re.IGNORECASE)
+    return re.sub(r"\s+", " ", normalized).strip()
+
+
+def group_error_incidents(entries, limit=20):
+    """Group repeated parsed error-log entries into investigation incidents."""
+    groups = {}
+    for position, entry in enumerate(entries):
+        message = entry.get("message", "")
+        level = entry.get("level", "unknown").lower()
+        signature = normalize_error_message(message)
+        key = (level, signature.lower())
+        occurred_at = parse_error_timestamp(entry.get("timestamp", ""))
+        incident = groups.setdefault(key, {
+            "id": hashlib.sha1(f"{level}:{signature.lower()}".encode()).hexdigest()[:12],
+            "level": level, "message": signature, "count": 0,
+            "timestamps": [], "affected_urls": [], "last_position": position,
+        })
+        incident["count"] += 1
+        incident["last_position"] = position
+        if occurred_at:
+            incident["timestamps"].append(occurred_at)
+        for url in extract_affected_urls(message):
+            if url not in incident["affected_urls"]:
+                incident["affected_urls"].append(url)
+
+    results = []
+    for incident in groups.values():
+        timestamps = sorted(incident.pop("timestamps"))
+        if timestamps:
+            first, last = timestamps[0], timestamps[-1]
+            buckets = [0] * 5
+            if first == last:
+                buckets[-1] = len(timestamps)
+            else:
+                span = (last - first).total_seconds()
+                for timestamp in timestamps:
+                    index = min(4, int(((timestamp - first).total_seconds() / span) * 5))
+                    buckets[index] += 1
+            incident.update(first_seen=first.isoformat(), last_seen=last.isoformat(), trend=buckets)
+        else:
+            incident.update(first_seen=None, last_seen=None, trend=[incident["count"]])
+        results.append(incident)
+
+    results.sort(key=lambda item: item.pop("last_position"), reverse=True)
+    return results[:limit]
 
 def parse_access_log(log_path, max_lines=1000):
     """Parse Apache access log entries.
@@ -903,6 +994,19 @@ def api_logs():
     # Read more lines than limit to ensure enough entries after filtering
     logs = parse_error_log(config["apache"]["error_log"], max_lines=max(limit * 2, 100), level_filter=level_filter)
     return jsonify(logs[-limit:])
+
+
+@app.route("/api/incidents")
+def api_incidents():
+    """Get recent error-log entries grouped into incidents."""
+    from flask import request
+
+    level_filter = request.args.get("level")
+    limit = min(max(int(request.args.get("limit", 20)), 1), 100)
+    scan = min(max(int(request.args.get("scan", 2000)), limit), 10000)
+    logs = parse_error_log(config["apache"]["error_log"], max_lines=scan, level_filter=level_filter)
+    incidents = group_error_incidents(logs, limit=limit)
+    return jsonify({"incidents": incidents, "count": len(incidents), "entries_scanned": len(logs)})
 
 @app.route("/api/history")
 def api_history():

@@ -73,6 +73,7 @@ web:
 - `GET /` - Web dashboard
 - `GET /api/metrics` - Current system metrics (JSON)
 - `GET /api/logs?level=error` - Recent log entries (JSON, optional level filter)
+- `GET /api/incidents?level=error&limit=20` - Repeated errors grouped into incidents with timestamps, affected URLs, and trend data
 - `GET /api/history` - Metrics history (JSON)
 - `GET /api/access-stats` - Access log analytics (top IPs, pages, status codes)
 - `GET /api/traffic-chart?hours=24` - Traffic chart data (JSON, default 24 hours)

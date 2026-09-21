@@ -34,6 +34,14 @@ alerts:
     requests_per_ip: 100
     bot_percentage: 75
 
+# Blocking recommendations are advisory only. Add office, VPN, CDN, and
+# monitoring networks here so they are never suggested for blocking.
+security:
+  minimum_score: 35
+  allowlist:
+    - 127.0.0.0/8
+    - ::1/128
+
 web:
   host: "0.0.0.0"  # Use 0.0.0.0 for Docker, or 127.0.0.1 for local-only
   port: 8080

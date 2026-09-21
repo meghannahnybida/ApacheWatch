@@ -8,7 +8,9 @@ import os
 import re
 import sqlite3
 import hashlib
+import ipaddress
 import concurrent.futures
+from collections import Counter, defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import psutil
 import yaml
@@ -40,6 +42,11 @@ DEFAULT_ALERTS_CONFIG = {
     }
 }
 
+DEFAULT_SECURITY_CONFIG = {
+    "allowlist": ["127.0.0.0/8", "::1/128"],
+    "minimum_score": 35,
+}
+
 def apply_config_defaults(config_data):
     """Apply defaults for optional config sections."""
     if not config_data:
@@ -60,6 +67,10 @@ def apply_config_defaults(config_data):
     config_data["alerts"].setdefault("thresholds", {})
     for name, value in DEFAULT_ALERTS_CONFIG["thresholds"].items():
         config_data["alerts"]["thresholds"].setdefault(name, value)
+
+    config_data.setdefault("security", {})
+    config_data["security"].setdefault("allowlist", DEFAULT_SECURITY_CONFIG["allowlist"].copy())
+    config_data["security"].setdefault("minimum_score", DEFAULT_SECURITY_CONFIG["minimum_score"])
 
     return config_data
 
@@ -354,6 +365,174 @@ def parse_access_log(log_path, max_lines=1000):
         print(f"WARNING: Could not parse access log {log_path}: {e}", flush=True)
 
     return entries
+
+
+SUSPICIOUS_PATH_PATTERNS = (
+    (re.compile(r"/(?:\.env|\.git(?:/|$)|\.svn(?:/|$))", re.I), "sensitive-file probing"),
+    (re.compile(r"/(?:wp-admin|wp-login\.php|xmlrpc\.php)(?:/|$|\?)", re.I), "WordPress probing"),
+    (re.compile(r"/(?:phpmyadmin|pma|adminer)(?:/|$|\?)", re.I), "database-admin probing"),
+    (re.compile(r"/(?:cgi-bin|vendor/phpunit|actuator|server-status)(?:/|$|\?)", re.I), "server or exploit probing"),
+    (re.compile(r"(?:\.\./|%2e%2e|%00|/etc/passwd|/proc/self)", re.I), "path-traversal probing"),
+)
+
+
+def parse_access_timestamp(value):
+    """Parse an Apache access-log timestamp."""
+    try:
+        return datetime.strptime(value, "%d/%b/%Y:%H:%M:%S %z")
+    except (TypeError, ValueError):
+        return None
+
+
+def _network_for_ip(address):
+    prefix = 24 if address.version == 4 else 64
+    return ipaddress.ip_network(f"{address}/{prefix}", strict=False)
+
+
+def _is_allowlisted(address, allowlist):
+    for value in allowlist:
+        try:
+            if address in ipaddress.ip_network(value, strict=False):
+                return True
+        except ValueError:
+            continue
+    return False
+
+
+def analyze_block_recommendations(entries, security_config=None):
+    """Score suspicious client IPs and ranges without taking blocking action."""
+    security_config = security_config or DEFAULT_SECURITY_CONFIG
+    allowlist = security_config.get("allowlist", [])
+    minimum_score = max(0, min(100, int(security_config.get("minimum_score", 35))))
+    by_ip = defaultdict(list)
+    for entry in entries:
+        by_ip[entry.get("ip", "")].append(entry)
+
+    recommendations = []
+    for ip, ip_entries in by_ip.items():
+        try:
+            address = ipaddress.ip_address(ip)
+        except ValueError:
+            continue
+        if address.is_loopback or _is_allowlisted(address, allowlist):
+            continue
+
+        total = len(ip_entries)
+        statuses = Counter(entry.get("status") for entry in ip_entries)
+        client_errors = sum(count for status, count in statuses.items() if status and 400 <= status < 500)
+        auth_failures = sum(count for status, count in statuses.items() if status in (401, 403))
+        not_found = statuses.get(404, 0)
+        suspicious_paths = []
+        suspicious_behaviors = set()
+        for entry in ip_entries:
+            path = entry.get("path", "")
+            for pattern, label in SUSPICIOUS_PATH_PATTERNS:
+                if pattern.search(path):
+                    suspicious_behaviors.add(label)
+                    if path not in suspicious_paths and len(suspicious_paths) < 8:
+                        suspicious_paths.append(path)
+
+        minute_counts = Counter()
+        parsed_times = []
+        for entry in ip_entries:
+            timestamp = parse_access_timestamp(entry.get("timestamp"))
+            if timestamp:
+                parsed_times.append(timestamp)
+                minute_counts[timestamp.replace(second=0, microsecond=0)] += 1
+        peak_per_minute = max(minute_counts.values(), default=0)
+
+        user_agents = {entry.get("user_agent") or "" for entry in ip_entries}
+        scanner_agent = any(
+            not agent or re.search(r"(?:curl|wget|python-requests|nikto|sqlmap|nmap|masscan)", agent, re.I)
+            for agent in user_agents
+        )
+
+        score = 0
+        reasons = []
+        if suspicious_paths:
+            points = min(45, 25 + (len(suspicious_paths) - 1) * 5)
+            score += points
+            reasons.append(f"{len(suspicious_paths)} suspicious path{'s' if len(suspicious_paths) != 1 else ''} requested")
+        if total >= 100:
+            score += 20
+            reasons.append(f"high request volume ({total} requests)")
+        elif total >= 40:
+            score += 10
+            reasons.append(f"elevated request volume ({total} requests)")
+        if total >= 5 and not_found / total >= 0.7:
+            score += 25
+            reasons.append(f"{round(not_found / total * 100)}% of requests returned 404")
+        if auth_failures >= 10:
+            score += 25
+            reasons.append(f"{auth_failures} authorization failures")
+        elif auth_failures >= 5:
+            score += 15
+            reasons.append(f"{auth_failures} authorization failures")
+        if peak_per_minute >= 30:
+            score += 25
+            reasons.append(f"burst of {peak_per_minute} requests/minute")
+        elif peak_per_minute >= 10:
+            score += 15
+            reasons.append(f"burst of {peak_per_minute} requests/minute")
+        if scanner_agent and (suspicious_paths or client_errors >= 5):
+            score += 10
+            reasons.append("scanner-like or missing user agent")
+
+        score = min(score, 100)
+        if score < minimum_score:
+            continue
+        action = "block_ip" if score >= 60 else "watch"
+        recommendations.append({
+            "target": ip,
+            "target_type": "ip",
+            "action": action,
+            "score": score,
+            "confidence": "high" if score >= 75 else "medium" if score >= 50 else "low",
+            "reasons": reasons,
+            "requests": total,
+            "client_errors": client_errors,
+            "error_rate": round(client_errors / total * 100, 1),
+            "peak_requests_per_minute": peak_per_minute,
+            "suspicious_paths": suspicious_paths,
+            "behaviors": sorted(suspicious_behaviors),
+            "first_seen": min(parsed_times).isoformat() if parsed_times else None,
+            "last_seen": max(parsed_times).isoformat() if parsed_times else None,
+            "rules": {
+                "apache": f"Require not ip {ip}",
+                "ufw": f"sudo ufw deny from {ip}",
+            },
+        })
+
+    # Recommend a range only when multiple independently suspicious IPs cluster in it.
+    range_members = defaultdict(list)
+    for item in recommendations:
+        if item["score"] >= 50:
+            address = ipaddress.ip_address(item["target"])
+            range_members[str(_network_for_ip(address))].append(item)
+    for network, members in range_members.items():
+        if len(members) < 2:
+            continue
+        score = min(100, round(sum(item["score"] for item in members) / len(members)) + 10)
+        recommendations.append({
+            "target": network,
+            "target_type": "range",
+            "action": "consider_range",
+            "score": score,
+            "confidence": "high" if len(members) >= 4 and score >= 75 else "medium",
+            "reasons": [f"{len(members)} suspicious IPs share this network"],
+            "member_ips": [item["target"] for item in members],
+            "requests": sum(item["requests"] for item in members),
+            "client_errors": sum(item["client_errors"] for item in members),
+            "suspicious_paths": list(dict.fromkeys(path for item in members for path in item["suspicious_paths"]))[:8],
+            "rules": {
+                "apache": f"Require not ip {network}",
+                "ufw": f"sudo ufw deny from {network}",
+            },
+        })
+
+    action_order = {"block_ip": 0, "consider_range": 1, "watch": 2}
+    recommendations.sort(key=lambda item: (action_order[item["action"]], -item["score"], item["target"]))
+    return recommendations
 
 def analyze_access_logs(entries):
     """Analyze access log entries to generate statistics.
@@ -1041,6 +1220,25 @@ def api_access_stats():
     evaluate_and_save_current_alerts(access_stats=stats)
 
     return jsonify(stats)
+
+
+@app.route("/api/block-recommendations")
+def api_block_recommendations():
+    """Return evidence-backed IP and network blocking recommendations."""
+    from flask import request
+
+    try:
+        scan = min(max(int(request.args.get("scan", 10000)), 100), 50000)
+    except ValueError:
+        return jsonify({"error": "scan must be an integer"}), 400
+    entries = parse_access_log(config["apache"].get("access_log", ""), max_lines=scan)
+    recommendations = analyze_block_recommendations(entries, config.get("security"))
+    return jsonify({
+        "recommendations": recommendations,
+        "count": len(recommendations),
+        "entries_scanned": len(entries),
+        "advisory_only": True,
+    })
 
 @app.route("/api/alerts")
 def api_alerts():

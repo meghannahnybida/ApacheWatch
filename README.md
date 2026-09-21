@@ -63,6 +63,12 @@ alerts:
     requests_per_ip: 100
     bot_percentage: 75
 
+security:
+  minimum_score: 35
+  allowlist:                 # Never recommend these IPs/networks for blocking
+    - 127.0.0.0/8
+    - ::1/128
+
 web:
   host: "0.0.0.0"  # Use 127.0.0.1 for local-only access
   port: 8080
@@ -76,6 +82,7 @@ web:
 - `GET /api/incidents?level=error&limit=20` - Repeated errors grouped into incidents with timestamps, affected URLs, and trend data
 - `GET /api/history` - Metrics history (JSON)
 - `GET /api/access-stats` - Access log analytics (top IPs, pages, status codes)
+- `GET /api/block-recommendations` - Advisory IP/range recommendations with evidence and proposed Apache/UFW rules
 - `GET /api/traffic-chart?hours=24` - Traffic chart data (JSON, default 24 hours)
 - `GET /api/alerts` - Recent local alerts saved in SQLite
 

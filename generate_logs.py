@@ -130,6 +130,25 @@ for day in range(5):
                 timestamp = day_start.replace(hour=hour, minute=minute, second=second)
                 logs.append((timestamp, generate_log_line(timestamp, is_bot)))
 
+# Add a small, deterministic attack simulation so the Block Recommendations
+# panel has meaningful development data. These are documentation-only examples;
+# no rules are ever applied by ApacheWatch.
+attack_paths = [
+    "/.env", "/.git/config", "/wp-login.php", "/phpmyadmin/",
+    "/vendor/phpunit/phpunit/src/Util/PHP/eval-stdin.php",
+]
+for attacker_index, attacker_ip in enumerate(("192.0.2.201", "192.0.2.202")):
+    attack_start = start_date + timedelta(days=4, hours=22, minutes=attacker_index * 5)
+    for request_index in range(35):
+        timestamp = attack_start + timedelta(seconds=request_index * 4)
+        path = attack_paths[request_index % len(attack_paths)]
+        status = 403 if request_index % 6 == 0 else 404
+        line = (
+            f'{attacker_ip} - - [{timestamp.strftime("%d/%b/%Y:%H:%M:%S +0000")}] '
+            f'"GET {path} HTTP/1.1" {status} 512 "-" "curl/8.5.0"\n'
+        )
+        logs.append((timestamp, line))
+
 # Sort logs by timestamp
 logs.sort(key=lambda x: x[0])
 

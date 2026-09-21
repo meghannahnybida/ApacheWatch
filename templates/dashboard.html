@@ -61,6 +61,23 @@
         </div>
     </details>
 
+    <section class="security-panel" aria-labelledby="block-recommendations-title">
+        <div class="security-header">
+            <div>
+                <h2 id="block-recommendations-title">Traffic Threats</h2>
+                <p>Prioritized IP and network block candidates. No rules are applied automatically.</p>
+            </div>
+            <div class="security-header-actions">
+                <span id="securityScanMeta" class="security-scan-meta">Analyzing access log...</span>
+                <a href="/api/block-recommendations" class="api-btn">API</a>
+            </div>
+        </div>
+        <div id="securitySummary" class="security-summary" aria-live="polite"></div>
+        <div id="blockRecommendations" class="recommendation-list">
+            <div class="security-empty">Analyzing client behavior...</div>
+        </div>
+    </section>
+
     <div class="logs">
         <div class="logs-header">
             <h2>Error Incidents</h2>
@@ -411,8 +428,116 @@
                 });
         }
 
+        function recommendationLabel(action) {
+            if (action === 'block_ip') return 'Block IP';
+            if (action === 'consider_range') return 'Review range';
+            return 'Watch';
+        }
+
+        function copyRule(button, value) {
+            navigator.clipboard.writeText(value).then(() => {
+                const original = button.textContent;
+                button.textContent = 'Copied';
+                setTimeout(() => { button.textContent = original; }, 1200);
+            });
+        }
+
+        let activeThreatFilter = 'all';
+
+        function applyThreatFilter(filter) {
+            activeThreatFilter = activeThreatFilter === filter ? 'all' : filter;
+            document.querySelectorAll('[data-threat-filter]').forEach(button => {
+                const active = activeThreatFilter === button.dataset.threatFilter;
+                button.classList.toggle('active', active);
+                button.setAttribute('aria-pressed', active ? 'true' : 'false');
+            });
+            document.querySelectorAll('#blockRecommendations [data-action]').forEach(row => {
+                row.hidden = activeThreatFilter !== 'all' && row.dataset.action !== activeThreatFilter;
+            });
+        }
+
+        function fetchBlockRecommendations() {
+            fetch('/api/block-recommendations')
+                .then(response => response.json())
+                .then(data => {
+                    const container = document.getElementById('blockRecommendations');
+                    document.getElementById('securityScanMeta').textContent =
+                        `${data.entries_scanned.toLocaleString()} requests scanned`;
+                    const blockCount = data.recommendations.filter(item => item.action === 'block_ip').length;
+                    const rangeCount = data.recommendations.filter(item => item.action === 'consider_range').length;
+                    const watchCount = data.recommendations.filter(item => item.action === 'watch').length;
+                    document.getElementById('securitySummary').innerHTML = `
+                        <button type="button" class="threat-stat threat-stat-danger" data-threat-filter="block_ip" aria-pressed="false" ${blockCount ? '' : 'disabled'}><strong>${blockCount}</strong><span>Block candidates</span></button>
+                        <button type="button" class="threat-stat threat-stat-range" data-threat-filter="consider_range" aria-pressed="false" ${rangeCount ? '' : 'disabled'}><strong>${rangeCount}</strong><span>Ranges to review</span></button>
+                        <button type="button" class="threat-stat threat-stat-watch" data-threat-filter="watch" aria-pressed="false" ${watchCount ? '' : 'disabled'}><strong>${watchCount}</strong><span>IPs to watch</span></button>`;
+                    document.querySelectorAll('[data-threat-filter]').forEach(button => {
+                        button.addEventListener('click', () => applyThreatFilter(button.dataset.threatFilter));
+                    });
+                    if (!data.recommendations.length) {
+                        document.getElementById('securitySummary').classList.add('all-clear');
+                        container.innerHTML = '<div class="security-empty">No clients currently meet the recommendation threshold.</div>';
+                        return;
+                    }
+                    document.getElementById('securitySummary').classList.remove('all-clear');
+                    container.innerHTML = data.recommendations.map(item => {
+                        const paths = item.suspicious_paths.length
+                            ? `<div class="recommendation-paths"><div><strong>Flagged URLs</strong><span>Requests matching common scanner targets</span></div><div class="flagged-url-list">${item.suspicious_paths.map(path => `<code>${escapeHtml(path)}</code>`).join('')}</div></div>`
+                            : '';
+                        const members = item.member_ips
+                            ? `<div class="recommendation-members"><strong>Member IPs:</strong> ${item.member_ips.map(escapeHtml).join(', ')}</div>`
+                            : '';
+                        const severity = item.score >= 75 ? 'Critical' : item.score >= 50 ? 'High' : 'Review';
+                        return `<details class="recommendation-card recommendation-${item.action}" data-action="${item.action}">
+                            <summary class="recommendation-row">
+                                <span class="recommendation-action">${recommendationLabel(item.action)}</span>
+                                <code class="recommendation-target">${escapeHtml(item.target)}</code>
+                                <span class="recommendation-primary-reason">${escapeHtml(item.reasons[0] || 'Suspicious behavior')}</span>
+                                <span class="recommendation-quick-stats">${item.requests} req · ${item.client_errors} errors</span>
+                                <span class="risk-pill risk-${severity.toLowerCase()}">${severity} ${item.score}</span>
+                                <span class="recommendation-chevron">⌄</span>
+                            </summary>
+                            <div class="recommendation-evidence">
+                                <div class="evidence-metrics">
+                                    <div><strong>${item.requests}</strong><span>Requests</span></div>
+                                    <div><strong>${item.client_errors}</strong><span>Client errors</span></div>
+                                    ${item.peak_requests_per_minute != null ? `<div><strong>${item.peak_requests_per_minute}</strong><span>Peak requests/min</span></div>` : ''}
+                                    <div><strong>${escapeHtml(item.confidence)}</strong><span>Confidence</span></div>
+                                </div>
+                                <div class="evidence-columns ${item.suspicious_paths.length ? '' : 'evidence-columns-single'}">
+                                    <section class="evidence-section">
+                                        <h4>Why this appeared</h4>
+                                        <ul class="recommendation-reasons">${item.reasons.map(reason => `<li>${escapeHtml(reason)}</li>`).join('')}</ul>
+                                        ${members}
+                                    </section>
+                                    ${paths}
+                                </div>
+                                <div class="rule-actions">
+                                    <span>Copy proposed rule:</span>
+                                    <button type="button" data-rule="${escapeHtml(item.rules.apache)}">Apache</button>
+                                    <button type="button" data-rule="${escapeHtml(item.rules.ufw)}">UFW</button>
+                                </div>
+                            </div>
+                        </details>`;
+                    }).join('');
+                    container.querySelectorAll('[data-rule]').forEach(button => {
+                        button.addEventListener('click', () => copyRule(button, button.dataset.rule));
+                    });
+                    if (activeThreatFilter !== 'all') {
+                        const selected = document.querySelector(`[data-threat-filter="${activeThreatFilter}"]`);
+                        activeThreatFilter = 'all';
+                        if (selected) applyThreatFilter(selected.dataset.threatFilter);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error fetching block recommendations:', error);
+                    document.getElementById('blockRecommendations').innerHTML =
+                        '<div class="security-empty security-error">Unable to analyze blocking recommendations.</div>';
+                });
+        }
+
         // Load analytics on page load
         fetchAccessStats();
+        fetchBlockRecommendations();
 
         // Initialize and load traffic charts
         let trafficChart, statusChart, visitorsChart;

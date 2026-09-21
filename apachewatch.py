@@ -262,10 +262,18 @@ def group_error_incidents(entries, limit=20):
         incident = groups.setdefault(key, {
             "id": hashlib.sha1(f"{level}:{signature.lower()}".encode()).hexdigest()[:12],
             "level": level, "message": signature, "count": 0,
-            "timestamps": [], "affected_urls": [], "last_position": position,
+            "timestamps": [], "affected_urls": [], "occurrences": [],
+            "last_position": position,
         })
         incident["count"] += 1
         incident["last_position"] = position
+        incident["occurrences"].append({
+            "timestamp": entry.get("timestamp", ""),
+            "message": message,
+            "affected_urls": extract_affected_urls(message),
+        })
+        # Preserve useful evidence without returning thousands of duplicate rows.
+        incident["occurrences"] = incident["occurrences"][-10:]
         if occurred_at:
             incident["timestamps"].append(occurred_at)
         for url in extract_affected_urls(message):
@@ -288,6 +296,8 @@ def group_error_incidents(entries, limit=20):
             incident.update(first_seen=first.isoformat(), last_seen=last.isoformat(), trend=buckets)
         else:
             incident.update(first_seen=None, last_seen=None, trend=[incident["count"]])
+        incident["occurrences"].reverse()
+        incident["occurrences_truncated"] = incident["count"] > len(incident["occurrences"])
         results.append(incident)
 
     results.sort(key=lambda item: item.pop("last_position"), reverse=True)
@@ -1002,8 +1012,11 @@ def api_incidents():
     from flask import request
 
     level_filter = request.args.get("level")
-    limit = min(max(int(request.args.get("limit", 20)), 1), 100)
-    scan = min(max(int(request.args.get("scan", 2000)), limit), 10000)
+    try:
+        limit = min(max(int(request.args.get("limit", 20)), 1), 100)
+        scan = min(max(int(request.args.get("scan", 2000)), limit), 10000)
+    except ValueError:
+        return jsonify({"error": "limit and scan must be integers"}), 400
     logs = parse_error_log(config["apache"]["error_log"], max_lines=scan, level_filter=level_filter)
     incidents = group_error_incidents(logs, limit=limit)
     return jsonify({"incidents": incidents, "count": len(incidents), "entries_scanned": len(logs)})

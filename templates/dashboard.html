@@ -288,6 +288,11 @@
                 const urls = entry.affected_urls.length
                     ? `<div class="incident-urls"><strong>Affected URLs:</strong> ${entry.affected_urls.map(escapeHtml).join(', ')}</div>`
                     : '<div class="incident-urls incident-muted">No request URL found in these log entries</div>';
+                const occurrences = entry.occurrences.map(occurrence => `
+                    <div class="occurrence-row">
+                        <time>${escapeHtml(occurrence.timestamp || 'Unknown time')}</time>
+                        <code>${escapeHtml(occurrence.message)}</code>
+                    </div>`).join('');
                 return `<div class="incident-card">
                     <div class="incident-main"><span class="level level-${escapeHtml(entry.level)}">${escapeHtml(entry.level.toUpperCase())}</span>
                     <span class="incident-message">${escapeHtml(entry.message)}</span>
@@ -295,6 +300,11 @@
                     ${urls}
                     <div class="incident-meta"><span>First: ${formatIncidentTime(entry.first_seen)}</span><span>Last: ${formatIncidentTime(entry.last_seen)}</span>
                     <span class="incident-trend" aria-label="Occurrence trend">${bars}</span></div>
+                    <details class="incident-details">
+                        <summary>Inspect ${entry.count === 1 ? 'occurrence' : `latest ${entry.occurrences.length} occurrences`}</summary>
+                        <div class="occurrence-list">${occurrences}</div>
+                        ${entry.occurrences_truncated ? `<div class="incident-muted">Showing the latest ${entry.occurrences.length} of ${entry.count} occurrences.</div>` : ''}
+                    </details>
                 </div>`;
             }).join('');
         }

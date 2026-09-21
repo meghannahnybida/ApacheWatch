@@ -7,116 +7,139 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 </head>
 <body>
-    <h1>ApacheWatch - {{ server_name }}</h1>
-
-    <div class="grid">
-        <div class="card">
-            <h2>CPU Usage</h2>
-            <div class="value" id="cpu-value">{{ metrics.cpu_percent }}%</div>
-            <div class="bar"><div class="bar-fill {{ 'bad' if metrics.cpu_percent > 90 else 'warn' if metrics.cpu_percent > 70 else 'good' }}" id="cpu-bar" style="width: {{ metrics.cpu_percent }}%"></div></div>
-        </div>
-
-        <div class="card">
-            <h2>Memory Usage</h2>
-            <div class="value" id="mem-value">{{ metrics.memory.percent }}%</div>
-            <div class="sub" id="mem-sub">{{ metrics.memory.used_gb }} GB / {{ metrics.memory.total_gb }} GB</div>
-            <div class="bar"><div class="bar-fill {{ 'bad' if metrics.memory.percent > 90 else 'warn' if metrics.memory.percent > 70 else 'good' }}" id="mem-bar" style="width: {{ metrics.memory.percent }}%"></div></div>
-        </div>
-
-        <div class="card">
-            <h2>Disk Usage</h2>
-            <div class="value" id="disk-value">{{ metrics.disk.percent }}%</div>
-            <div class="sub" id="disk-sub">{{ metrics.disk.used_gb }} GB / {{ metrics.disk.total_gb }} GB</div>
-            <div class="bar"><div class="bar-fill {{ 'bad' if metrics.disk.percent > 90 else 'warn' if metrics.disk.percent > 70 else 'good' }}" id="disk-bar" style="width: {{ metrics.disk.percent }}%"></div></div>
-        </div>
-    </div>
-
-    <details class="alerts-panel" id="alerts-panel" {% if recent_alerts %}open{% endif %}>
-        <summary class="alerts-summary">
-            <span class="alerts-title">Alerts</span>
-            <div class="alerts-meta" id="alerts-meta">
-                {% set crit_count = recent_alerts | selectattr('severity', 'equalto', 'critical') | list | length %}
-                {% set warn_count = recent_alerts | rejectattr('severity', 'equalto', 'critical') | list | length %}
-                {% if crit_count > 0 %}<span class="badge badge-critical">{{ crit_count }} critical</span>{% endif %}
-                {% if warn_count > 0 %}<span class="badge badge-warning">{{ warn_count }} warning</span>{% endif %}
-                {% if not recent_alerts %}<span class="badge badge-ok">All clear</span>{% endif %}
-                <a href="/api/alerts" class="api-btn" onclick="event.stopPropagation()">API</a>
-                <span class="alerts-chevron">&#8964;</span>
+    <div class="app-shell">
+        <aside class="sidebar">
+            <a class="brand" href="#overview" aria-label="ApacheWatch overview">
+                <span class="brand-mark" aria-hidden="true">A</span>
+                <span><strong>ApacheWatch</strong><small>Server monitor</small></span>
+            </a>
+            <nav class="primary-nav" aria-label="Dashboard sections">
+                <a href="#overview" data-view-link="overview" class="nav-link active">
+                    <span class="nav-icon" aria-hidden="true">⌂</span><span>Overview</span>
+                </a>
+                <a href="#incidents" data-view-link="incidents" class="nav-link">
+                    <span class="nav-icon" aria-hidden="true">!</span><span>Incidents</span>
+                </a>
+                <a href="#security" data-view-link="security" class="nav-link">
+                    <span class="nav-icon" aria-hidden="true">◇</span><span>Security</span>
+                </a>
+                <a href="#analytics" data-view-link="analytics" class="nav-link">
+                    <span class="nav-icon" aria-hidden="true">↗</span><span>Analytics</span>
+                </a>
+            </nav>
+            <div class="sidebar-server">
+                <span class="server-dot"></span>
+                <span><small>Monitoring</small><strong>{{ server_name }}</strong></span>
             </div>
-        </summary>
-        <div id="alerts-body">
-        {% if recent_alerts %}
-        <div class="alerts-list">
-            {% for alert in recent_alerts %}
-            <div class="alert-row alert-{{ alert.severity }}">
-                <span class="badge badge-{{ alert.severity }}">{{ alert.severity.upper() }}</span>
-                <span class="alert-message">{{ alert.message }}</span>
-                <span class="alert-time">{{ alert.timestamp[0:16] | replace('T', ' ') }}</span>
-            </div>
-            {% endfor %}
-        </div>
-        {% else %}
-        <div class="alert-empty">No alerts recorded.</div>
-        {% endif %}
-        </div>
-    </details>
+        </aside>
 
-    <section class="security-panel" aria-labelledby="block-recommendations-title">
-        <div class="security-header">
-            <div>
-                <h2 id="block-recommendations-title">Traffic Threats</h2>
-                <p>Prioritized IP and network block candidates. No rules are applied automatically.</p>
-            </div>
-            <div class="security-header-actions">
-                <span id="securityScanMeta" class="security-scan-meta">Analyzing access log...</span>
-                <a href="/api/block-recommendations" class="api-btn">API</a>
-            </div>
-        </div>
-        <div id="securitySummary" class="security-summary" aria-live="polite"></div>
-        <div id="blockRecommendations" class="recommendation-list">
-            <div class="security-empty">Analyzing client behavior...</div>
-        </div>
-    </section>
-
-    <div class="logs">
-        <div class="logs-header">
-            <h2>Error Incidents</h2>
-            <div style="display: flex; gap: 15px; align-items: center;">
-                <div style="display: flex; align-items: center; gap: 8px; font-size: 12px; color: #666;">
-                    <label for="logSearch" style="display: flex; align-items: center; gap: 8px;">
-                        <input type="text" id="logSearch" placeholder="Search incidents or URLs..." style="padding: 4px 8px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 12px; width: 200px;">
-                    </label>
+        <main class="main-content">
+            <header class="topbar">
+                <div>
+                    <p class="eyebrow">{{ server_name }}</p>
+                    <h1 id="view-title">Overview</h1>
+                    <p class="view-description" id="view-description">A quick read on the health of your Apache server.</p>
                 </div>
-                <div style="display: flex; align-items: center; gap: 8px; font-size: 12px; color: #666;">
-                    <label for="logLimit">Show:</label>
-                    <select id="logLimit" style="padding: 4px 8px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 12px; background: white;">
-                        <option value="10">10 incidents</option>
-                        <option value="20" selected>20 incidents</option>
-                        <option value="50">50 incidents</option>
-                        <option value="100">100 incidents</option>
+                <div class="refresh-controls">
+                    <span id="last-updated">Updated {{ metrics.timestamp[0:19] | replace('T', ' ') }}</span>
+                    <label for="autoRefreshSelect">Refresh</label>
+                    <select id="autoRefreshSelect">
+                        <option value="0">Off</option>
+                        <option value="30" selected>30s</option>
+                        <option value="60">1m</option>
+                        <option value="300">5m</option>
                     </select>
                 </div>
-                <div class="tail-toggle">
-                    <span>Tail Mode</span>
-                    <label class="toggle-switch">
-                        <input type="checkbox" id="tailToggle">
-                        <span class="toggle-slider"></span>
-                    </label>
-                    <span class="tail-status" id="tailStatus" style="display: none;">● Live</span>
-                </div>
-            </div>
-        </div>
-        <div class="filter-buttons">
-            <a href="/" class="filter-btn {% if not current_filter %}active{% endif %}">All</a>
-            <a href="/?level=error" class="filter-btn {% if current_filter == 'error' %}active{% endif %}">Error</a>
-            <a href="/?level=warn" class="filter-btn {% if current_filter == 'warn' %}active{% endif %}">Warn</a>
-            <a href="/?level=notice" class="filter-btn {% if current_filter == 'notice' %}active{% endif %}">Notice</a>
-            <a href="/?level=info" class="filter-btn {% if current_filter == 'info' %}active{% endif %}">Info</a>
-        </div>
-        <div id="logEntries"><div class="log-entry">Loading incidents...</div></div>
-    </div>
+            </header>
 
-    <div class="chart-card">
+            <section class="dashboard-view active" data-view="overview">
+                <div class="section-heading">
+                    <div><p class="section-kicker">Live health</p><h2>System resources</h2></div>
+                    <span class="live-indicator"><i></i> Live</span>
+                </div>
+                <div class="metrics-grid">
+                    <article class="card metric-card">
+                        <div class="metric-heading"><h3>CPU</h3><span>Processor load</span></div>
+                        <div class="value" id="cpu-value">{{ metrics.cpu_percent }}%</div>
+                        <div class="bar"><div class="bar-fill {{ 'bad' if metrics.cpu_percent > 90 else 'warn' if metrics.cpu_percent > 70 else 'good' }}" id="cpu-bar" style="width: {{ metrics.cpu_percent }}%"></div></div>
+                    </article>
+                    <article class="card metric-card">
+                        <div class="metric-heading"><h3>Memory</h3><span id="mem-sub">{{ metrics.memory.used_gb }} / {{ metrics.memory.total_gb }} GB</span></div>
+                        <div class="value" id="mem-value">{{ metrics.memory.percent }}%</div>
+                        <div class="bar"><div class="bar-fill {{ 'bad' if metrics.memory.percent > 90 else 'warn' if metrics.memory.percent > 70 else 'good' }}" id="mem-bar" style="width: {{ metrics.memory.percent }}%"></div></div>
+                    </article>
+                    <article class="card metric-card">
+                        <div class="metric-heading"><h3>Disk</h3><span id="disk-sub">{{ metrics.disk.used_gb }} / {{ metrics.disk.total_gb }} GB</span></div>
+                        <div class="value" id="disk-value">{{ metrics.disk.percent }}%</div>
+                        <div class="bar"><div class="bar-fill {{ 'bad' if metrics.disk.percent > 90 else 'warn' if metrics.disk.percent > 70 else 'good' }}" id="disk-bar" style="width: {{ metrics.disk.percent }}%"></div></div>
+                    </article>
+                </div>
+
+                <div class="section-heading compact-heading">
+                    <div><p class="section-kicker">Needs attention</p><h2>Recent alerts</h2></div>
+                    <a href="/api/alerts" class="text-link">View API</a>
+                </div>
+                <details class="alerts-panel" id="alerts-panel" {% if recent_alerts %}open{% endif %}>
+                    <summary class="alerts-summary">
+                        <span class="alerts-title">Latest activity</span>
+                        <div class="alerts-meta" id="alerts-meta">
+                            {% set crit_count = recent_alerts | selectattr('severity', 'equalto', 'critical') | list | length %}
+                            {% set warn_count = recent_alerts | rejectattr('severity', 'equalto', 'critical') | list | length %}
+                            {% if crit_count > 0 %}<span class="badge badge-critical">{{ crit_count }} critical</span>{% endif %}
+                            {% if warn_count > 0 %}<span class="badge badge-warning">{{ warn_count }} warning</span>{% endif %}
+                            {% if not recent_alerts %}<span class="badge badge-ok">All clear</span>{% endif %}
+                            <span class="alerts-chevron">⌄</span>
+                        </div>
+                    </summary>
+                    <div id="alerts-body">
+                    {% if recent_alerts %}<div class="alerts-list">
+                        {% for alert in recent_alerts %}<div class="alert-row alert-{{ alert.severity }}">
+                            <span class="badge badge-{{ alert.severity }}">{{ alert.severity.upper() }}</span>
+                            <span class="alert-message">{{ alert.message }}</span>
+                            <span class="alert-time">{{ alert.timestamp[0:16] | replace('T', ' ') }}</span>
+                        </div>{% endfor %}
+                    </div>{% else %}<div class="alert-empty">No alerts recorded.</div>{% endif %}
+                    </div>
+                </details>
+                <div class="quick-links">
+                    <a href="#incidents"><span><strong>Investigate errors</strong><small>Search and group recent log events</small></span><b>→</b></a>
+                    <a href="#security"><span><strong>Review threats</strong><small>Inspect suspicious traffic and block candidates</small></span><b>→</b></a>
+                    <a href="#analytics"><span><strong>Explore traffic</strong><small>See volume, status codes, and visitors</small></span><b>→</b></a>
+                </div>
+            </section>
+
+            <section class="dashboard-view" data-view="incidents" hidden>
+                <div class="logs">
+                    <div class="logs-header">
+                        <div><p class="section-kicker">Apache error log</p><h2>Error incidents</h2></div>
+                        <div class="log-toolbar">
+                            <label class="search-field" for="logSearch"><span>⌕</span><input type="search" id="logSearch" placeholder="Search incidents or URLs"></label>
+                            <label class="select-field" for="logLimit">Show <select id="logLimit"><option value="10">10</option><option value="20" selected>20</option><option value="50">50</option><option value="100">100</option></select></label>
+                            <div class="tail-toggle"><span>Tail</span><label class="toggle-switch"><input type="checkbox" id="tailToggle"><span class="toggle-slider"></span></label><span class="tail-status" id="tailStatus" style="display: none;">● Live</span></div>
+                        </div>
+                    </div>
+                    <div class="filter-buttons">
+                        <a href="/#incidents" class="filter-btn {% if not current_filter %}active{% endif %}">All</a>
+                        <a href="/?level=error#incidents" class="filter-btn {% if current_filter == 'error' %}active{% endif %}">Error</a>
+                        <a href="/?level=warn#incidents" class="filter-btn {% if current_filter == 'warn' %}active{% endif %}">Warn</a>
+                        <a href="/?level=notice#incidents" class="filter-btn {% if current_filter == 'notice' %}active{% endif %}">Notice</a>
+                        <a href="/?level=info#incidents" class="filter-btn {% if current_filter == 'info' %}active{% endif %}">Info</a>
+                    </div>
+                    <div id="logEntries"><div class="log-entry">Loading incidents...</div></div>
+                </div>
+            </section>
+
+            <section class="dashboard-view" data-view="security" hidden>
+                <section class="security-panel" aria-labelledby="block-recommendations-title">
+                    <div class="security-header"><div><p class="section-kicker">Access log analysis</p><h2 id="block-recommendations-title">Traffic threats</h2><p>Prioritized IP and network block candidates. No rules are applied automatically.</p></div><div class="security-header-actions"><span id="securityScanMeta" class="security-scan-meta">Analyzing access log...</span><a href="/api/block-recommendations" class="api-btn">View API</a></div></div>
+                    <div id="securitySummary" class="security-summary" aria-live="polite"></div>
+                    <div id="blockRecommendations" class="recommendation-list"><div class="security-empty">Analyzing client behavior...</div></div>
+                </section>
+            </section>
+
+            <section class="dashboard-view" data-view="analytics" hidden>
+                <div class="analytics-layout">
+                <div class="chart-card traffic-chart-card">
         <div class="chart-card-header">
             <h2>Traffic Over Time</h2>
             <div class="chart-card-controls">
@@ -138,8 +161,8 @@
         </div>
     </div>
 
-    <div class="grid" style="margin-top: 20px;">
-        <div class="chart-card" style="margin-top: 0;">
+                <div class="analytics-grid">
+        <div class="chart-card">
             <div class="chart-card-header">
                 <h2>Status Codes Over Time</h2>
                 <div class="chart-card-controls">
@@ -160,7 +183,7 @@
                 <canvas id="statusChart"></canvas>
             </div>
         </div>
-        <div class="chart-card" style="margin-top: 0;">
+        <div class="chart-card">
             <div class="chart-card-header">
                 <h2>Unique Visitors Per Hour</h2>
                 <div class="chart-card-controls">
@@ -183,39 +206,26 @@
         </div>
     </div>
 
-    <div class="grid" style="margin-top: 30px;">
-        <div class="card">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-                <h2 style="margin: 0;">Top Visitors (by IP)</h2>
-                <div id="botStats" style="font-size: 12px; color: #666;">
-                    <span style="color: #10b981;">Human: <span id="humanCount">-</span></span>
-                    <span style="margin-left: 10px; color: #f59e0b;">Bot: <span id="botCount">-</span></span>
-                    <span style="margin-left: 5px;">(<span id="botPercentage">-</span>%)</span>
+                <div class="analytics-grid">
+        <div class="card list-card">
+            <div class="list-card-header">
+                <h2>Top visitors</h2>
+                <div id="botStats" class="bot-stats">
+                    <span class="human-stat">Human <span id="humanCount">-</span></span>
+                    <span class="bot-stat">Bot <span id="botCount">-</span></span>
+                    <span>(<span id="botPercentage">-</span>%)</span>
                 </div>
             </div>
-            <div id="topIps" style="margin-top: 15px; font-size: 13px;">
-                <div style="color: #999;">Loading...</div>
-            </div>
+            <div id="topIps" class="stat-list"><div class="empty-state">Loading...</div></div>
         </div>
-        <div class="card">
-            <h2>Most Requested Pages</h2>
-            <div id="topPages" style="margin-top: 15px; font-size: 13px;">
-                <div style="color: #999;">Loading...</div>
-            </div>
+        <div class="card list-card">
+            <div class="list-card-header"><h2>Most requested pages</h2></div>
+            <div id="topPages" class="stat-list"><div class="empty-state">Loading...</div></div>
         </div>
-    </div>
-
-    <div class="refresh-bar">
-        <span id="last-updated">Last updated: {{ metrics.timestamp[0:19] | replace('T', ' ') }}</span>
-        <div class="refresh-controls">
-            <label for="autoRefreshSelect">Auto-refresh:</label>
-            <select id="autoRefreshSelect">
-                <option value="0">Off</option>
-                <option value="30" selected>30s</option>
-                <option value="60">1m</option>
-                <option value="300">5m</option>
-            </select>
-        </div>
+                </div>
+                </div>
+            </section>
+        </main>
     </div>
 
     <script>
@@ -226,6 +236,45 @@
         const logLimit = document.getElementById('logLimit');
         const logSearch = document.getElementById('logSearch');
         let currentLogs = []; // Incident groups currently loaded
+
+        const viewMeta = {
+            overview: ['Overview', 'A quick read on the health of your Apache server.'],
+            incidents: ['Incidents', 'Investigate grouped errors without losing the signal in the noise.'],
+            security: ['Security', 'Review suspicious clients and evidence before taking action.'],
+            analytics: ['Analytics', 'Explore traffic volume, response health, and visitor behavior.']
+        };
+
+        function showView(viewName) {
+            const selected = viewMeta[viewName] ? viewName : 'overview';
+            document.querySelectorAll('[data-view]').forEach(view => {
+                const active = view.dataset.view === selected;
+                view.hidden = !active;
+                view.classList.toggle('active', active);
+            });
+            document.querySelectorAll('[data-view-link]').forEach(link => {
+                const active = link.dataset.viewLink === selected;
+                link.classList.toggle('active', active);
+                if (active) link.setAttribute('aria-current', 'page');
+                else link.removeAttribute('aria-current');
+            });
+            document.getElementById('view-title').textContent = viewMeta[selected][0];
+            document.getElementById('view-description').textContent = viewMeta[selected][1];
+            document.title = `${viewMeta[selected][0]} · ApacheWatch`;
+
+            if (selected === 'analytics') {
+                requestAnimationFrame(() => {
+                    [trafficChart, statusChart, visitorsChart].forEach(chart => {
+                        if (chart) chart.resize();
+                    });
+                });
+            }
+        }
+
+        function syncViewFromHash() {
+            showView(window.location.hash.slice(1).toLowerCase() || 'overview');
+        }
+
+        window.addEventListener('hashchange', syncViewFromHash);
 
         // Load saved preferences
         const savedTailMode = localStorage.getItem('tailMode') === 'true';
@@ -730,7 +779,6 @@
                     if (critCount > 0) metaHtml += `<span class="badge badge-critical">${critCount} critical</span>`;
                     if (warnCount > 0) metaHtml += `<span class="badge badge-warning">${warnCount} warning</span>`;
                     if (alerts.length === 0) metaHtml += '<span class="badge badge-ok">All clear</span>';
-                    metaHtml += '<a href="/api/alerts" class="api-btn" onclick="event.stopPropagation()">API</a>';
                     metaHtml += '<span class="alerts-chevron">&#8964;</span>';
                     document.getElementById('alerts-meta').innerHTML = metaHtml;
 
@@ -795,6 +843,7 @@
         }
 
         document.addEventListener('keydown', e => { if (e.key === 'Escape') closeChartModal(); });
+        syncViewFromHash();
     </script>
 
     <div id="chart-modal" class="chart-modal">

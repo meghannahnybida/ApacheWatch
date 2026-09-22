@@ -1222,6 +1222,36 @@ def api_access_stats():
     return jsonify(stats)
 
 
+@app.route("/api/access-logs")
+def api_access_logs():
+    """Return recent parsed access-log requests for interactive inspection."""
+    from flask import request
+
+    try:
+        limit = min(max(int(request.args.get("limit", 100)), 1), 500)
+    except ValueError:
+        return jsonify({"error": "limit must be an integer"}), 400
+
+    entries = parse_access_log(config["apache"].get("access_log", ""), max_lines=limit)
+    entries.reverse()  # Newest requests first for log exploration.
+
+    summary = {
+        "total": len(entries),
+        "success": sum(1 for entry in entries if 200 <= entry["status"] <= 299),
+        "redirects": sum(1 for entry in entries if 300 <= entry["status"] <= 399),
+        "client_errors": sum(1 for entry in entries if 400 <= entry["status"] <= 499),
+        "server_errors": sum(1 for entry in entries if 500 <= entry["status"] <= 599),
+        "unique_ips": len({entry["ip"] for entry in entries}),
+        "total_bytes": sum(entry["size"] for entry in entries),
+    }
+
+    return jsonify({
+        "entries": entries,
+        "count": len(entries),
+        "summary": summary,
+    })
+
+
 @app.route("/api/block-recommendations")
 def api_block_recommendations():
     """Return evidence-backed IP and network blocking recommendations."""

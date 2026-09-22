@@ -17,8 +17,8 @@
                 <a href="#overview" data-view-link="overview" class="nav-link active">
                     <span class="nav-icon" aria-hidden="true">⌂</span><span>Overview</span>
                 </a>
-                <a href="#incidents" data-view-link="incidents" class="nav-link">
-                    <span class="nav-icon" aria-hidden="true">!</span><span>Incidents</span>
+                <a href="#logs" data-view-link="logs" class="nav-link">
+                    <span class="nav-icon" aria-hidden="true">≡</span><span>Log Explorer</span>
                 </a>
                 <a href="#security" data-view-link="security" class="nav-link">
                     <span class="nav-icon" aria-hidden="true">◇</span><span>Security</span>
@@ -102,30 +102,55 @@
                     </div>
                 </details>
                 <div class="quick-links">
-                    <a href="#incidents"><span><strong>Investigate errors</strong><small>Search and group recent log events</small></span><b>→</b></a>
+                    <a href="#logs"><span><strong>Explore server logs</strong><small>Search raw lines or group repeated events</small></span><b>→</b></a>
                     <a href="#security"><span><strong>Review threats</strong><small>Inspect suspicious traffic and block candidates</small></span><b>→</b></a>
                     <a href="#analytics"><span><strong>Explore traffic</strong><small>See volume, status codes, and visitors</small></span><b>→</b></a>
                 </div>
             </section>
 
-            <section class="dashboard-view" data-view="incidents" hidden>
+            <section class="dashboard-view" data-view="logs" hidden>
                 <div class="logs">
                     <div class="logs-header">
-                        <div><p class="section-kicker">Apache error log</p><h2>Error incidents</h2></div>
-                        <div class="log-toolbar">
-                            <label class="search-field" for="logSearch"><span>⌕</span><input type="search" id="logSearch" placeholder="Search incidents or URLs"></label>
-                            <label class="select-field" for="logLimit">Show <select id="logLimit"><option value="10">10</option><option value="20" selected>20</option><option value="50">50</option><option value="100">100</option></select></label>
-                            <div class="tail-toggle"><span>Tail</span><label class="toggle-switch"><input type="checkbox" id="tailToggle"><span class="toggle-slider"></span></label><span class="tail-status" id="tailStatus" style="display: none;">● Live</span></div>
+                        <div><p class="section-kicker" id="logSourceLabel">Source: Apache error_log</p><h2>Log Explorer</h2></div>
+                        <div class="log-source-control">
+                            <span>Log source</span>
+                            <div class="log-source-switch" role="tablist" aria-label="Log source">
+                                <button type="button" class="log-source-button active" data-log-source="error" role="tab" aria-selected="true">Error log</button>
+                                <button type="button" class="log-source-button" data-log-source="access" role="tab" aria-selected="false">Access log</button>
+                            </div>
                         </div>
                     </div>
-                    <div class="filter-buttons">
-                        <a href="/#incidents" class="filter-btn {% if not current_filter %}active{% endif %}">All</a>
-                        <a href="/?level=error#incidents" class="filter-btn {% if current_filter == 'error' %}active{% endif %}">Error</a>
-                        <a href="/?level=warn#incidents" class="filter-btn {% if current_filter == 'warn' %}active{% endif %}">Warn</a>
-                        <a href="/?level=notice#incidents" class="filter-btn {% if current_filter == 'notice' %}active{% endif %}">Notice</a>
-                        <a href="/?level=info#incidents" class="filter-btn {% if current_filter == 'info' %}active{% endif %}">Info</a>
+                    <div class="log-control-bar">
+                        <div class="log-view-tabs" id="errorViewTabs" role="tablist" aria-label="Error log display">
+                            <button type="button" class="log-view-tab active" data-error-view="grouped" role="tab" aria-selected="true">Repeated issues</button>
+                            <button type="button" class="log-view-tab" data-error-view="raw" role="tab" aria-selected="false">Raw lines</button>
+                        </div>
+                        <div class="access-view-title" id="accessViewTitle" hidden><strong>Request activity</strong><span>Individual HTTP requests</span></div>
+                        <div class="log-toolbar">
+                            <label class="search-field" for="logSearch"><span>⌕</span><input type="search" id="logSearch" placeholder="Search messages or URLs"></label>
+                            <label class="select-field" for="logLimit">Show <select id="logLimit"><option value="10">10</option><option value="20" selected>20</option><option value="50">50</option><option value="100">100</option></select></label>
+                            <button type="button" class="live-log-button" id="liveLogButton" aria-pressed="false"><span class="live-log-dot"></span><span class="live-log-label">Watch live</span></button>
+                        </div>
                     </div>
-                    <div id="logEntries"><div class="log-entry">Loading incidents...</div></div>
+                    <p class="log-view-help" id="logViewHelp">Similar log lines are combined into one issue. “12 occurrences” means it happened 12 times; expand the issue to see the individual log lines.</p>
+                    <div class="filter-buttons" id="errorLogFilters">
+                        <a href="/#logs" class="filter-btn {% if not current_filter %}active{% endif %}">All</a>
+                        <a href="/?level=error#logs" class="filter-btn {% if current_filter == 'error' %}active{% endif %}">Error</a>
+                        <a href="/?level=warn#logs" class="filter-btn {% if current_filter == 'warn' %}active{% endif %}">Warn</a>
+                        <a href="/?level=notice#logs" class="filter-btn {% if current_filter == 'notice' %}active{% endif %}">Notice</a>
+                        <a href="/?level=info#logs" class="filter-btn {% if current_filter == 'info' %}active{% endif %}">Info</a>
+                    </div>
+                    <div class="access-summary" id="accessSummary" hidden></div>
+                    <div class="filter-buttons" id="accessLogFilters" hidden>
+                        <button type="button" class="filter-btn active" data-status-filter="all">All</button>
+                        <button type="button" class="filter-btn" data-status-filter="2">2xx</button>
+                        <button type="button" class="filter-btn" data-status-filter="3">3xx</button>
+                        <button type="button" class="filter-btn" data-status-filter="4">4xx</button>
+                        <button type="button" class="filter-btn" data-status-filter="5">5xx</button>
+                    </div>
+                    <div id="logEntries"><div class="log-entry">Finding repeated issues...</div></div>
+                    <div id="rawLogEntries" class="raw-log" hidden><div class="log-entry">Loading recent log lines...</div></div>
+                    <div id="accessLogEntries" class="access-log" hidden><div class="log-entry">Loading recent requests...</div></div>
                 </div>
             </section>
 
@@ -230,16 +255,31 @@
 
     <script>
         let tailInterval = null;
-        const tailToggle = document.getElementById('tailToggle');
-        const tailStatus = document.getElementById('tailStatus');
+        const liveLogButton = document.getElementById('liveLogButton');
+        const errorViewTabs = document.getElementById('errorViewTabs');
+        const accessViewTitle = document.getElementById('accessViewTitle');
         const logEntries = document.getElementById('logEntries');
+        const rawLogEntries = document.getElementById('rawLogEntries');
+        const accessLogEntries = document.getElementById('accessLogEntries');
+        const accessSummary = document.getElementById('accessSummary');
+        const errorLogFilters = document.getElementById('errorLogFilters');
+        const accessLogFilters = document.getElementById('accessLogFilters');
         const logLimit = document.getElementById('logLimit');
         const logSearch = document.getElementById('logSearch');
         let currentLogs = []; // Incident groups currently loaded
+        let currentRawLogs = [];
+        let currentAccessLogs = [];
+        let currentAccessSummary = {};
+        let activeAccessStatus = 'all';
+        const savedLogView = localStorage.getItem('logView');
+        let activeErrorView = savedLogView === 'raw' ? 'raw' : 'grouped';
+        let activeLogSource = localStorage.getItem('logSource') === 'access' || savedLogView === 'access' ? 'access' : 'error';
+        let activeLogView = activeLogSource === 'access' ? 'access' : activeErrorView;
+        let liveRefreshEnabled = false;
 
         const viewMeta = {
             overview: ['Overview', 'A quick read on the health of your Apache server.'],
-            incidents: ['Incidents', 'Investigate grouped errors without losing the signal in the noise.'],
+            logs: ['Log Explorer', 'Search, filter, group, and watch recent Apache log activity.'],
             security: ['Security', 'Review suspicious clients and evidence before taking action.'],
             analytics: ['Analytics', 'Explore traffic volume, response health, and visitor behavior.']
         };
@@ -271,58 +311,148 @@
         }
 
         function syncViewFromHash() {
-            showView(window.location.hash.slice(1).toLowerCase() || 'overview');
+            const requested = window.location.hash.slice(1).toLowerCase();
+            showView(requested === 'incidents' ? 'logs' : requested || 'overview');
         }
 
         window.addEventListener('hashchange', syncViewFromHash);
-
-        // Load saved preferences
-        const savedTailMode = localStorage.getItem('tailMode') === 'true';
-        if (savedTailMode) {
-            tailToggle.checked = true;
-            startTailMode();
-        }
 
         const savedLogLimit = localStorage.getItem('logLimit');
         if (savedLogLimit) {
             logLimit.value = savedLogLimit;
         }
 
-        // Load logs on page load to enable search functionality
+        setLogSource(activeLogSource);
         fetchLogs();
 
-        tailToggle.addEventListener('change', function() {
-            if (this.checked) {
-                startTailMode();
-                localStorage.setItem('tailMode', 'true');
-            } else {
+        if (localStorage.getItem('tailMode') === 'true') {
+            if (activeLogSource === 'error') setLogView('raw');
+            startTailMode();
+        }
+
+        liveLogButton.addEventListener('click', function() {
+            if (liveRefreshEnabled) {
                 stopTailMode();
-                localStorage.setItem('tailMode', 'false');
+            } else {
+                if (activeLogSource === 'error') setLogView('raw');
+                startTailMode();
             }
         });
 
         logLimit.addEventListener('change', function() {
             localStorage.setItem('logLimit', this.value);
-            fetchLogs(); // Immediately refresh with new limit (works with or without tail mode)
+            fetchActiveLogData();
         });
 
-        // Search functionality
         logSearch.addEventListener('input', function() {
-            filterAndDisplayLogs();
+            renderActiveLogView();
         });
+
+        document.querySelectorAll('[data-log-source]').forEach(button => {
+            button.addEventListener('click', () => setLogSource(button.dataset.logSource));
+        });
+
+        document.querySelectorAll('[data-error-view]').forEach(button => {
+            button.addEventListener('click', () => {
+                if (button.dataset.errorView === 'grouped' && liveRefreshEnabled) stopTailMode();
+                setLogView(button.dataset.errorView);
+            });
+        });
+
+        document.querySelectorAll('[data-status-filter]').forEach(button => {
+            button.addEventListener('click', () => {
+                activeAccessStatus = button.dataset.statusFilter;
+                document.querySelectorAll('[data-status-filter]').forEach(item => {
+                    item.classList.toggle('active', item === button);
+                });
+                filterAndDisplayAccessLogs();
+            });
+        });
+
+        function setLogSource(source) {
+            const nextSource = source === 'access' ? 'access' : 'error';
+            if (nextSource !== activeLogSource) logSearch.value = '';
+            activeLogSource = nextSource;
+            localStorage.setItem('logSource', activeLogSource);
+            document.querySelectorAll('[data-log-source]').forEach(button => {
+                const active = button.dataset.logSource === activeLogSource;
+                button.classList.toggle('active', active);
+                button.setAttribute('aria-selected', active ? 'true' : 'false');
+            });
+            errorViewTabs.hidden = activeLogSource !== 'error';
+            accessViewTitle.hidden = activeLogSource !== 'access';
+            setLogView(activeLogSource === 'access' ? 'access' : liveRefreshEnabled ? 'raw' : activeErrorView);
+            if (liveRefreshEnabled) startTailMode();
+        }
+
+        function setLogView(view) {
+            activeLogView = view === 'access' ? 'access' : view === 'raw' ? 'raw' : 'grouped';
+            if (activeLogView !== 'access') {
+                activeErrorView = activeLogView;
+                localStorage.setItem('logView', activeErrorView);
+            }
+            document.querySelectorAll('[data-error-view]').forEach(button => {
+                const active = button.dataset.errorView === activeLogView;
+                button.classList.toggle('active', active);
+                button.setAttribute('aria-selected', active ? 'true' : 'false');
+            });
+            logEntries.hidden = activeLogView !== 'grouped';
+            rawLogEntries.hidden = activeLogView !== 'raw';
+            accessLogEntries.hidden = activeLogView !== 'access';
+            errorLogFilters.hidden = activeLogView === 'access';
+            accessLogFilters.hidden = activeLogView !== 'access';
+            accessSummary.hidden = activeLogView !== 'access';
+            document.getElementById('logSourceLabel').textContent = activeLogView === 'access'
+                ? 'Source: Apache access_log'
+                : 'Source: Apache error_log';
+            const helpText = {
+                grouped: 'Similar error-log lines are combined into one issue. “12 occurrences” means it happened 12 times; expand the issue to see the individual lines.',
+                raw: 'Raw recent lines from the Apache error log. Enable auto-refresh to check for new entries every five seconds.',
+                access: 'Recent HTTP requests from the Apache access log. Search by path, IP, method, status, referrer, or user agent.'
+            };
+            document.getElementById('logViewHelp').textContent = helpText[activeLogView];
+            logSearch.placeholder = activeLogView === 'access' ? 'Search requests, IPs, or status' : 'Search messages or URLs';
+            updateLiveLogButton();
+            if (activeLogView === 'raw' && currentRawLogs.length === 0) fetchRawLogs();
+            else if (activeLogView === 'access' && currentAccessLogs.length === 0) fetchAccessLogs();
+            else renderActiveLogView();
+        }
+
+        function renderActiveLogView() {
+            if (activeLogView === 'access') filterAndDisplayAccessLogs();
+            else if (activeLogView === 'raw') filterAndDisplayRawLogs();
+            else filterAndDisplayLogs();
+        }
+
+        function fetchActiveLogData() {
+            if (activeLogView === 'access') fetchAccessLogs();
+            else if (activeLogView === 'raw') fetchRawLogs();
+            else fetchLogs();
+        }
 
         function startTailMode() {
-            tailStatus.style.display = 'inline';
-            // Fetch logs every 5 seconds
-            tailInterval = setInterval(fetchLogs, 5000);
+            liveRefreshEnabled = true;
+            localStorage.setItem('tailMode', 'true');
+            if (tailInterval) clearInterval(tailInterval);
+            fetchActiveLogData();
+            tailInterval = setInterval(fetchActiveLogData, 5000);
+            updateLiveLogButton();
         }
 
         function stopTailMode() {
-            tailStatus.style.display = 'none';
+            liveRefreshEnabled = false;
+            localStorage.setItem('tailMode', 'false');
             if (tailInterval) {
                 clearInterval(tailInterval);
                 tailInterval = null;
             }
+            updateLiveLogButton();
+        }
+
+        function updateLiveLogButton() {
+            liveLogButton.classList.toggle('watching', liveRefreshEnabled);
+            liveLogButton.setAttribute('aria-pressed', liveRefreshEnabled ? 'true' : 'false');
+            liveLogButton.querySelector('.live-log-label').textContent = liveRefreshEnabled ? 'Pause live' : 'Watch live';
         }
 
         function filterAndDisplayLogs() {
@@ -362,7 +492,7 @@
                 return `<div class="incident-card">
                     <div class="incident-main"><span class="level level-${escapeHtml(entry.level)}">${escapeHtml(entry.level.toUpperCase())}</span>
                     <span class="incident-message">${escapeHtml(entry.message)}</span>
-                    <span class="incident-count">${entry.count}&times;</span></div>
+                    <span class="incident-count">${entry.count} ${entry.count === 1 ? 'occurrence' : 'occurrences'}</span></div>
                     ${urls}
                     <div class="incident-meta"><span>First: ${formatIncidentTime(entry.first_seen)}</span><span>Last: ${formatIncidentTime(entry.last_seen)}</span>
                     <span class="incident-trend" aria-label="Occurrence trend">${bars}</span></div>
@@ -373,6 +503,84 @@
                     </details>
                 </div>`;
             }).join('');
+        }
+
+        function filterAndDisplayRawLogs() {
+            const searchTerm = logSearch.value.toLowerCase().trim();
+            const filteredLogs = searchTerm
+                ? currentRawLogs.filter(entry =>
+                    entry.message.toLowerCase().includes(searchTerm) ||
+                    entry.level.toLowerCase().includes(searchTerm) ||
+                    (entry.timestamp || '').toLowerCase().includes(searchTerm))
+                : currentRawLogs;
+
+            if (filteredLogs.length === 0) {
+                rawLogEntries.innerHTML = `<div class="raw-log-empty">${searchTerm ? `No log lines match “${escapeHtml(searchTerm)}”.` : 'No recent error-log lines found.'}</div>`;
+                return;
+            }
+
+            rawLogEntries.innerHTML = filteredLogs.slice().reverse().map(entry => `
+                <div class="raw-log-row">
+                    <time>${escapeHtml(entry.timestamp || 'Unknown time')}</time>
+                    <span class="level level-${escapeHtml(entry.level)}">${escapeHtml(entry.level.toUpperCase())}</span>
+                    <code>${escapeHtml(entry.message)}</code>
+                </div>`).join('');
+        }
+
+        function filterAndDisplayAccessLogs() {
+            const searchTerm = logSearch.value.toLowerCase().trim();
+            const filtered = currentAccessLogs.filter(entry => {
+                const statusMatches = activeAccessStatus === 'all' || String(entry.status).startsWith(activeAccessStatus);
+                const searchable = [entry.timestamp, entry.status, entry.method, entry.path, entry.ip,
+                    entry.protocol, entry.referer, entry.user_agent, entry.user].filter(Boolean).join(' ').toLowerCase();
+                return statusMatches && (!searchTerm || searchable.includes(searchTerm));
+            });
+
+            renderAccessSummary();
+            if (filtered.length === 0) {
+                accessLogEntries.innerHTML = `<div class="access-log-empty">${searchTerm || activeAccessStatus !== 'all' ? 'No requests match the current filters.' : 'No recent access-log requests found.'}</div>`;
+                return;
+            }
+
+            accessLogEntries.innerHTML = `
+                <div class="access-log-heading" aria-hidden="true"><span>Time</span><span>Status</span><span>Request</span><span>Path</span><span>Client</span><span>Size</span><span></span></div>
+                ${filtered.map(entry => {
+                    const family = Math.floor(entry.status / 100);
+                    return `<details class="access-request">
+                        <summary class="access-request-row">
+                            <time>${escapeHtml(entry.timestamp)}</time>
+                            <span class="http-status status-${family}xx">${entry.status}</span>
+                            <span class="request-method">${escapeHtml(entry.method)}</span>
+                            <code class="request-path">${escapeHtml(entry.path)}</code>
+                            <code class="request-ip">${escapeHtml(entry.ip)}</code>
+                            <span class="request-size">${formatBytes(entry.size)}</span>
+                            <span class="recommendation-chevron">⌄</span>
+                        </summary>
+                        <div class="access-request-details">
+                            <div><span>Protocol</span><code>${escapeHtml(entry.protocol || 'Unknown')}</code></div>
+                            <div><span>User</span><code>${escapeHtml(entry.user || 'Anonymous')}</code></div>
+                            <div><span>Referrer</span><code>${escapeHtml(entry.referer || 'Direct / unavailable')}</code></div>
+                            <div class="user-agent-detail"><span>User agent</span><code>${escapeHtml(entry.user_agent || 'Unavailable')}</code></div>
+                        </div>
+                    </details>`;
+                }).join('')}`;
+        }
+
+        function renderAccessSummary() {
+            const summary = currentAccessSummary;
+            accessSummary.innerHTML = `
+                <div><strong>${summary.total || 0}</strong><span>Loaded requests</span></div>
+                <div><strong>${summary.unique_ips || 0}</strong><span>Unique clients</span></div>
+                <div class="summary-success"><strong>${summary.success || 0}</strong><span>Successful</span></div>
+                <div class="summary-warning"><strong>${summary.client_errors || 0}</strong><span>Client errors</span></div>
+                <div class="summary-danger"><strong>${summary.server_errors || 0}</strong><span>Server errors</span></div>`;
+        }
+
+        function formatBytes(value) {
+            const bytes = Number(value) || 0;
+            if (bytes < 1024) return `${bytes} B`;
+            if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+            return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
         }
 
         function escapeHtml(value) {
@@ -408,6 +616,39 @@
                 })
                 .catch(error => {
                     console.error('Error fetching logs:', error);
+                });
+        }
+
+        function fetchRawLogs() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const level = urlParams.get('level');
+            const params = new URLSearchParams({ limit: logLimit.value });
+            if (level) params.set('level', level);
+
+            fetch(`/api/logs?${params.toString()}`)
+                .then(response => response.json())
+                .then(data => {
+                    currentRawLogs = Array.isArray(data) ? data : [];
+                    filterAndDisplayRawLogs();
+                })
+                .catch(error => {
+                    console.error('Error fetching raw logs:', error);
+                    rawLogEntries.innerHTML = '<div class="raw-log-empty raw-log-error">Unable to read the error log.</div>';
+                });
+        }
+
+        function fetchAccessLogs() {
+            const params = new URLSearchParams({ limit: logLimit.value });
+            fetch(`/api/access-logs?${params.toString()}`)
+                .then(response => response.json())
+                .then(data => {
+                    currentAccessLogs = data.entries || [];
+                    currentAccessSummary = data.summary || {};
+                    filterAndDisplayAccessLogs();
+                })
+                .catch(error => {
+                    console.error('Error fetching access logs:', error);
+                    accessLogEntries.innerHTML = '<div class="access-log-empty access-log-error">Unable to read the access log.</div>';
                 });
         }
 

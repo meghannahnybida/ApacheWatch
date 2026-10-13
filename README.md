@@ -78,12 +78,15 @@ web:
 
 - `GET /` - Web dashboard
 - `GET /api/metrics` - Current system metrics (JSON)
+- `GET /api/monitoring-health` - Apache process visibility and configured log-source health
 - `GET /api/logs?level=error` - Recent log entries (JSON, optional level filter)
 - `GET /api/incidents?level=error&limit=20` - Repeated errors grouped into incidents with timestamps, affected URLs, and trend data
 - `GET /api/history` - Metrics history (JSON)
 - `GET /api/access-stats` - Access log analytics (top IPs, pages, status codes)
 - `GET /api/access-logs?limit=100` - Recent parsed access-log requests for interactive inspection
 - `GET /api/block-recommendations` - Advisory IP/range recommendations with evidence and proposed Apache/UFW rules
+- `GET /api/action-items?status=open` - Unified alert, recurring-error, and traffic-threat inbox
+- `PATCH /api/action-items/<id>` - Acknowledge, snooze, resolve, dismiss, or reopen a finding
 - `GET /api/traffic-chart?hours=24` - Traffic chart data (JSON, default 24 hours)
 - `GET /api/alerts` - Recent local alerts saved in SQLite
 
@@ -151,5 +154,6 @@ Refresh the dashboard, then check the Recent Alerts panel or open `http://localh
   - Tracks bot vs human traffic percentages
 - **Historical Data**: Track metrics over time with SQLite storage
 - **Local Alerts**: Save threshold-based alerts to SQLite and expose them through the dashboard/API
+- **Action Center**: Track alerts, recurring errors, and traffic threats through acknowledgement, snooze, resolution, and dismissal
 - **Web Dashboard**: Clean, responsive interface for all metrics
 - **Docker Ready**: Full containerization support for easy deployment

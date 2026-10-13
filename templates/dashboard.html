@@ -1,12 +1,14 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
+    <meta charset="utf-8">
     <title>ApacheWatch</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" defer></script>
 </head>
 <body>
+    <a class="skip-link" href="#mainContent">Skip to content</a>
     <div class="app-shell">
         <aside class="sidebar">
             <a class="brand" href="#overview" aria-label="ApacheWatch overview">
@@ -14,17 +16,21 @@
                 <span><strong>ApacheWatch</strong><small>Server monitor</small></span>
             </a>
             <nav class="primary-nav" aria-label="Dashboard sections">
-                <a href="#overview" data-view-link="overview" class="nav-link active">
-                    <span class="nav-icon" aria-hidden="true">⌂</span><span>Overview</span>
+                <a href="#overview" data-view-link="overview" class="nav-link active" aria-label="Overview">
+                    <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1Z"/></svg></span><span>Overview</span>
                 </a>
-                <a href="#logs" data-view-link="logs" class="nav-link">
-                    <span class="nav-icon" aria-hidden="true">≡</span><span>Log Explorer</span>
+                <a href="#actions" data-view-link="actions" class="nav-link" aria-label="Action Center">
+                    <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="18" rx="3"/><path d="M12 7v6m0 4h.01"/></svg></span><span>Action Center</span>
+                    <span class="nav-count" id="actionNavCount" hidden>0</span>
                 </a>
-                <a href="#security" data-view-link="security" class="nav-link">
-                    <span class="nav-icon" aria-hidden="true">◇</span><span>Security</span>
+                <a href="#logs" data-view-link="logs" class="nav-link" aria-label="Log Explorer">
+                    <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4h10l3 3v14H4V4h3m1 5h8m-8 4h8m-8 4h5"/></svg></span><span>Log Explorer</span>
                 </a>
-                <a href="#analytics" data-view-link="analytics" class="nav-link">
-                    <span class="nav-icon" aria-hidden="true">↗</span><span>Analytics</span>
+                <a href="#security" data-view-link="security" class="nav-link" aria-label="Security">
+                    <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3 8 3v6c0 4-5 8-8 9-3-1-8-5-8-9V6Z"/><path d="m8 12 3 3 5-6"/></svg></span><span>Security</span>
+                </a>
+                <a href="#analytics" data-view-link="analytics" class="nav-link" aria-label="Analytics">
+                    <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4v16h16M8 15l4-5 4 2 4-6"/></svg></span><span>Analytics</span>
                 </a>
             </nav>
             <div class="sidebar-server">
@@ -33,16 +39,16 @@
             </div>
         </aside>
 
-        <main class="main-content">
+        <main class="main-content" id="mainContent" tabindex="-1">
             <header class="topbar">
                 <div>
                     <p class="eyebrow">{{ server_name }}</p>
                     <h1 id="view-title">Overview</h1>
-                    <p class="view-description" id="view-description">A quick read on the health of your Apache server.</p>
+                    <p class="view-description" id="view-description">Server health and findings that need your attention.</p>
                 </div>
                 <div class="refresh-controls">
-                    <span id="last-updated">Updated {{ metrics.timestamp[0:19] | replace('T', ' ') }}</span>
-                    <label for="autoRefreshSelect">Refresh</label>
+                    <span id="last-updated">Updated just now</span>
+                    <label for="autoRefreshSelect">Auto-refresh</label>
                     <select id="autoRefreshSelect">
                         <option value="0">Off</option>
                         <option value="30" selected>30s</option>
@@ -53,10 +59,7 @@
             </header>
 
             <section class="dashboard-view active" data-view="overview">
-                <div class="section-heading">
-                    <div><p class="section-kicker">Live health</p><h2>System resources</h2></div>
-                    <span class="live-indicator"><i></i> Live</span>
-                </div>
+                <div class="section-heading"><h2>System resources</h2></div>
                 <div class="metrics-grid">
                     <article class="card metric-card">
                         <div class="metric-heading"><h3>CPU</h3><span>Processor load</span></div>
@@ -76,1028 +79,205 @@
                 </div>
 
                 <div class="section-heading compact-heading">
-                    <div><p class="section-kicker">Needs attention</p><h2>Recent alerts</h2></div>
-                    <a href="/api/alerts" class="text-link">View API</a>
+                    <h2>Needs attention</h2>
+                    <a href="#actions" class="text-link">Open Action Center →</a>
                 </div>
-                <details class="alerts-panel" id="alerts-panel" {% if recent_alerts %}open{% endif %}>
-                    <summary class="alerts-summary">
-                        <span class="alerts-title">Latest activity</span>
-                        <div class="alerts-meta" id="alerts-meta">
-                            {% set crit_count = recent_alerts | selectattr('severity', 'equalto', 'critical') | list | length %}
-                            {% set warn_count = recent_alerts | rejectattr('severity', 'equalto', 'critical') | list | length %}
-                            {% if crit_count > 0 %}<span class="badge badge-critical">{{ crit_count }} critical</span>{% endif %}
-                            {% if warn_count > 0 %}<span class="badge badge-warning">{{ warn_count }} warning</span>{% endif %}
-                            {% if not recent_alerts %}<span class="badge badge-ok">All clear</span>{% endif %}
-                            <span class="alerts-chevron">⌄</span>
-                        </div>
-                    </summary>
-                    <div id="alerts-body">
-                    {% if recent_alerts %}<div class="alerts-list">
-                        {% for alert in recent_alerts %}<div class="alert-row alert-{{ alert.severity }}">
-                            <span class="badge badge-{{ alert.severity }}">{{ alert.severity.upper() }}</span>
-                            <span class="alert-message">{{ alert.message }}</span>
-                            <span class="alert-time">{{ alert.timestamp[0:16] | replace('T', ' ') }}</span>
-                        </div>{% endfor %}
-                    </div>{% else %}<div class="alert-empty">No alerts recorded.</div>{% endif %}
+                <div class="action-overview-panel">
+                    <div class="action-overview-summary" id="actionOverviewSummary">
+                        <span class="action-loading">Collecting current findings…</span>
                     </div>
-                </details>
-                <div class="quick-links">
-                    <a href="#logs"><span><strong>Explore server logs</strong><small>Search raw lines or group repeated events</small></span><b>→</b></a>
-                    <a href="#security"><span><strong>Review threats</strong><small>Inspect suspicious traffic and block candidates</small></span><b>→</b></a>
-                    <a href="#analytics"><span><strong>Explore traffic</strong><small>See volume, status codes, and visitors</small></span><b>→</b></a>
+                    <div class="log-source-notice" id="logSourceNotice" role="status" hidden>
+                        <span id="logSourceNoticeText"></span>
+                        <a href="#logs" class="text-link" id="openLogSetup">Check log setup →</a>
+                    </div>
+                    <div class="action-overview-list" id="actionOverviewList"></div>
+                </div>
+            </section>
+
+            <section class="dashboard-view" data-view="actions" hidden>
+                <div class="action-center">
+                    <div class="action-center-header">
+                        <div>
+                            <h2>Findings</h2>
+                        </div>
+                        <button type="button" class="secondary-button" id="refreshActionItems">Refresh findings</button>
+                    </div>
+                    <div class="action-queues" role="group" aria-label="Finding queues">
+                        <button type="button" class="action-queue active" data-action-filter="open" aria-pressed="true">
+                            <span>Needs attention <b id="actionOpenCount">—</b></span><small>New and in progress</small>
+                        </button>
+                        <button type="button" class="action-queue" data-action-filter="snoozed" aria-pressed="false">
+                            <span>Snoozed <b id="actionSnoozedCount">—</b></span><small>Set aside until later</small>
+                        </button>
+                        <button type="button" class="action-queue" data-action-filter="history" aria-pressed="false">
+                            <span>History <b id="actionHistoryCount">—</b></span><small>Resolved and dismissed</small>
+                        </button>
+                    </div>
+                    <div class="action-toolbar">
+                        <label class="action-search" for="actionSearch"><span>Search findings</span><input type="search" id="actionSearch" placeholder="Search title, message, or IP…"></label>
+                        <label class="action-source-filter" for="actionSourceFilter"><span>Source</span><select id="actionSourceFilter">
+                            <option value="all">All sources</option>
+                            <option value="alert">Threshold alerts</option>
+                            <option value="error">Apache errors</option>
+                            <option value="security">Traffic threats</option>
+                        </select></label>
+                        <button type="button" class="text-button" id="clearActionFilters" hidden>Clear filters</button>
+                    </div>
+                    <div class="action-list-heading"><span class="action-result-count" id="actionResultCount" aria-live="polite"></span><span id="actionQueueHint">Highest priority first</span></div>
+                    <div class="action-list" id="actionItems" aria-live="polite">
+                        <div class="action-empty">Collecting current findings…</div>
+                    </div>
                 </div>
             </section>
 
             <section class="dashboard-view" data-view="logs" hidden>
                 <div class="logs">
                     <div class="logs-header">
-                        <div><p class="section-kicker" id="logSourceLabel">Source: Apache error_log</p><h2>Log Explorer</h2></div>
                         <div class="log-source-control">
-                            <span>Log source</span>
-                            <div class="log-source-switch" role="tablist" aria-label="Log source">
-                                <button type="button" class="log-source-button active" data-log-source="error" role="tab" aria-selected="true">Error log</button>
-                                <button type="button" class="log-source-button" data-log-source="access" role="tab" aria-selected="false">Access log</button>
+                            <div class="log-source-switch" role="group" aria-label="Log source">
+                                <button type="button" class="log-source-button active" data-log-source="error" aria-pressed="true">Error log</button>
+                                <button type="button" class="log-source-button" data-log-source="access" aria-pressed="false">Access log</button>
                             </div>
+                        </div>
+                        <div class="log-view-tabs" id="errorViewTabs" role="group" aria-label="Error log display">
+                            <button type="button" class="log-view-tab active" data-error-view="grouped" aria-pressed="true">Grouped issues</button>
+                            <button type="button" class="log-view-tab" data-error-view="raw" aria-pressed="false">Raw lines</button>
                         </div>
                     </div>
                     <div class="log-control-bar">
-                        <div class="log-view-tabs" id="errorViewTabs" role="tablist" aria-label="Error log display">
-                            <button type="button" class="log-view-tab active" data-error-view="grouped" role="tab" aria-selected="true">Repeated issues</button>
-                            <button type="button" class="log-view-tab" data-error-view="raw" role="tab" aria-selected="false">Raw lines</button>
-                        </div>
-                        <div class="access-view-title" id="accessViewTitle" hidden><strong>Request activity</strong><span>Individual HTTP requests</span></div>
                         <div class="log-toolbar">
-                            <label class="search-field" for="logSearch"><span>⌕</span><input type="search" id="logSearch" placeholder="Search messages or URLs"></label>
-                            <label class="select-field" for="logLimit">Show <select id="logLimit"><option value="10">10</option><option value="20" selected>20</option><option value="50">50</option><option value="100">100</option></select></label>
+                            <label class="search-field" for="logSearch"><span class="sr-only">Search logs</span><input type="search" id="logSearch" placeholder="Search messages or URLs"></label>
+                            <label class="select-field" for="logLimit">Rows <select id="logLimit"><option value="10">10</option><option value="20" selected>20</option><option value="50">50</option><option value="100">100</option></select></label>
                             <button type="button" class="live-log-button" id="liveLogButton" aria-pressed="false"><span class="live-log-dot"></span><span class="live-log-label">Watch live</span></button>
                         </div>
                     </div>
-                    <p class="log-view-help" id="logViewHelp">Similar log lines are combined into one issue. “12 occurrences” means it happened 12 times; expand the issue to see the individual log lines.</p>
-                    <div class="filter-buttons" id="errorLogFilters">
-                        <a href="/#logs" class="filter-btn {% if not current_filter %}active{% endif %}">All</a>
-                        <a href="/?level=error#logs" class="filter-btn {% if current_filter == 'error' %}active{% endif %}">Error</a>
-                        <a href="/?level=warn#logs" class="filter-btn {% if current_filter == 'warn' %}active{% endif %}">Warn</a>
-                        <a href="/?level=notice#logs" class="filter-btn {% if current_filter == 'notice' %}active{% endif %}">Notice</a>
-                        <a href="/?level=info#logs" class="filter-btn {% if current_filter == 'info' %}active{% endif %}">Info</a>
+                    <div class="filter-buttons" id="errorLogFilters" role="group" aria-label="Error severity">
+                        <button type="button" class="filter-btn active" data-error-level="" aria-pressed="true">All levels</button>
+                        <button type="button" class="filter-btn" data-error-level="error" aria-pressed="false">Error</button>
+                        <button type="button" class="filter-btn" data-error-level="warn" aria-pressed="false">Warning</button>
+                        <button type="button" class="filter-btn" data-error-level="notice" aria-pressed="false">Notice</button>
+                        <button type="button" class="filter-btn" data-error-level="info" aria-pressed="false">Info</button>
                     </div>
                     <div class="access-summary" id="accessSummary" hidden></div>
-                    <div class="filter-buttons" id="accessLogFilters" hidden>
-                        <button type="button" class="filter-btn active" data-status-filter="all">All</button>
-                        <button type="button" class="filter-btn" data-status-filter="2">2xx</button>
-                        <button type="button" class="filter-btn" data-status-filter="3">3xx</button>
-                        <button type="button" class="filter-btn" data-status-filter="4">4xx</button>
-                        <button type="button" class="filter-btn" data-status-filter="5">5xx</button>
+                    <div class="filter-buttons" id="accessLogFilters" role="group" aria-label="HTTP response status" hidden>
+                        <button type="button" class="filter-btn active" data-status-filter="all" aria-pressed="true">All responses</button>
+                        <button type="button" class="filter-btn" data-status-filter="2" aria-pressed="false">Success · 2xx</button>
+                        <button type="button" class="filter-btn" data-status-filter="3" aria-pressed="false">Redirects · 3xx</button>
+                        <button type="button" class="filter-btn" data-status-filter="4" aria-pressed="false">Client errors · 4xx</button>
+                        <button type="button" class="filter-btn" data-status-filter="5" aria-pressed="false">Server errors · 5xx</button>
                     </div>
+                    <p class="log-view-help" id="logViewHelp">Repeated messages are grouped together. Expand an issue for evidence.</p>
                     <div id="logEntries"><div class="log-entry">Finding repeated issues...</div></div>
                     <div id="rawLogEntries" class="raw-log" hidden><div class="log-entry">Loading recent log lines...</div></div>
                     <div id="accessLogEntries" class="access-log" hidden><div class="log-entry">Loading recent requests...</div></div>
+                    <details class="log-source-setup" id="logSourceSetup">
+                        <summary>Log file setup <span class="disclosure-chevron" aria-hidden="true">⌄</span></summary>
+                        <div id="logSourceStatus"><p>Checking log files…</p></div>
+                    </details>
                 </div>
             </section>
 
             <section class="dashboard-view" data-view="security" hidden>
                 <section class="security-panel" aria-labelledby="block-recommendations-title">
-                    <div class="security-header"><div><p class="section-kicker">Access log analysis</p><h2 id="block-recommendations-title">Traffic threats</h2><p>Prioritized IP and network block candidates. No rules are applied automatically.</p></div><div class="security-header-actions"><span id="securityScanMeta" class="security-scan-meta">Analyzing access log...</span><a href="/api/block-recommendations" class="api-btn">View API</a></div></div>
+                    <div class="security-header"><h2 id="block-recommendations-title">Traffic threats</h2><span id="securityScanMeta" class="security-scan-meta">Analyzing access log…</span></div>
                     <div id="securitySummary" class="security-summary" aria-live="polite"></div>
                     <div id="blockRecommendations" class="recommendation-list"><div class="security-empty">Analyzing client behavior...</div></div>
                 </section>
             </section>
 
             <section class="dashboard-view" data-view="analytics" hidden>
+                <div class="analytics-toolbar">
+                    <h2>Traffic trends</h2>
+                    <label class="select-field" for="analyticsTimeRange">Time range
+                        <select id="analyticsTimeRange">
+                            <option value="24">Last 24 hours</option>
+                            <option value="72">Last 3 days</option>
+                            <option value="168" selected>Last 7 days</option>
+                            <option value="336">Last 14 days</option>
+                            <option value="720">Last 30 days</option>
+                            <option value="all">All available history</option>
+                        </select>
+                    </label>
+                </div>
                 <div class="analytics-layout">
-                <div class="chart-card traffic-chart-card">
-        <div class="chart-card-header">
-            <h2>Traffic Over Time</h2>
-            <div class="chart-card-controls">
-                <select id="trafficTimeRange" class="chart-time-select">
-                    <option value="24">24h</option>
-                    <option value="72">3d</option>
-                    <option value="168" selected>7d</option>
-                    <option value="336">14d</option>
-                    <option value="720">30d</option>
-                    <option value="all">All</option>
-                </select>
-                <button class="expand-btn" onclick="openChartModal('traffic', 'Traffic Over Time')" title="Expand">
-                    <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M1 5V1h4M9 1h4v4M1 9v4h4M9 13h4V9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                </button>
-            </div>
-        </div>
-        <div class="chart-container">
-            <canvas id="trafficChart"></canvas>
-        </div>
-    </div>
-
-                <div class="analytics-grid">
-        <div class="chart-card">
-            <div class="chart-card-header">
-                <h2>Status Codes Over Time</h2>
-                <div class="chart-card-controls">
-                    <select id="statusTimeRange" class="chart-time-select">
-                        <option value="24">24h</option>
-                        <option value="72">3d</option>
-                        <option value="168" selected>7d</option>
-                        <option value="336">14d</option>
-                        <option value="720">30d</option>
-                        <option value="all">All</option>
-                    </select>
-                    <button class="expand-btn" onclick="openChartModal('status', 'Status Codes Over Time')" title="Expand">
-                        <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M1 5V1h4M9 1h4v4M1 9v4h4M9 13h4V9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                    </button>
+                    {% for key, title in [('traffic', 'Requests over time'), ('status', 'Response status'), ('visitors', 'Unique visitors')] %}
+                    <article class="chart-card {{ 'traffic-chart-card' if key == 'traffic' else '' }}">
+                        <div class="chart-card-header">
+                            <h2>{{ title }}</h2>
+                            <button type="button" class="expand-btn" data-chart-key="{{ key }}" data-chart-title="{{ title }}" aria-label="Expand {{ title | lower }}">
+                                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M2 6V2h4M10 2h4v4M2 10v4h4M10 14h4v-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            </button>
+                        </div>
+                        <div class="chart-container">
+                            <canvas id="{{ key }}Chart" role="img" aria-label="{{ title }} for the selected time range"></canvas>
+                            <p class="chart-empty" id="{{ key }}ChartEmpty" role="status">Loading history…</p>
+                        </div>
+                    </article>
+                    {% endfor %}
+                    <article class="card list-card">
+                        <div class="list-card-header"><h2>Top visitors</h2></div>
+                        <p id="botStats" class="bot-stats"><span class="human-stat">Human <span id="humanCount">—</span></span><span class="bot-stat">Bot <span id="botCount">—</span></span><span><span id="botPercentage">—</span>% bot traffic</span></p>
+                        <div id="topIps" class="stat-list"><div class="empty-state">Loading visitors…</div></div>
+                    </article>
+                    <article class="card list-card">
+                        <div class="list-card-header"><h2>Most requested pages</h2></div>
+                        <div id="topPages" class="stat-list"><div class="empty-state">Loading pages…</div></div>
+                    </article>
                 </div>
-            </div>
-            <div class="chart-container" style="height: 250px;">
-                <canvas id="statusChart"></canvas>
-            </div>
-        </div>
-        <div class="chart-card">
-            <div class="chart-card-header">
-                <h2>Unique Visitors Per Hour</h2>
-                <div class="chart-card-controls">
-                    <select id="visitorsTimeRange" class="chart-time-select">
-                        <option value="24">24h</option>
-                        <option value="72">3d</option>
-                        <option value="168" selected>7d</option>
-                        <option value="336">14d</option>
-                        <option value="720">30d</option>
-                        <option value="all">All</option>
-                    </select>
-                    <button class="expand-btn" onclick="openChartModal('visitors', 'Unique Visitors Per Hour')" title="Expand">
-                        <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M1 5V1h4M9 1h4v4M1 9v4h4M9 13h4V9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                    </button>
-                </div>
-            </div>
-            <div class="chart-container" style="height: 250px;">
-                <canvas id="visitorsChart"></canvas>
-            </div>
-        </div>
-    </div>
-
-                <div class="analytics-grid">
-        <div class="card list-card">
-            <div class="list-card-header">
-                <h2>Top visitors</h2>
-                <div id="botStats" class="bot-stats">
-                    <span class="human-stat">Human <span id="humanCount">-</span></span>
-                    <span class="bot-stat">Bot <span id="botCount">-</span></span>
-                    <span>(<span id="botPercentage">-</span>%)</span>
-                </div>
-            </div>
-            <div id="topIps" class="stat-list"><div class="empty-state">Loading...</div></div>
-        </div>
-        <div class="card list-card">
-            <div class="list-card-header"><h2>Most requested pages</h2></div>
-            <div id="topPages" class="stat-list"><div class="empty-state">Loading...</div></div>
-        </div>
-                </div>
-                </div>
+                <p class="analytics-note">Visitor and page rankings reflect the latest access-log scan.</p>
             </section>
         </main>
     </div>
 
-    <script>
-        let tailInterval = null;
-        const liveLogButton = document.getElementById('liveLogButton');
-        const errorViewTabs = document.getElementById('errorViewTabs');
-        const accessViewTitle = document.getElementById('accessViewTitle');
-        const logEntries = document.getElementById('logEntries');
-        const rawLogEntries = document.getElementById('rawLogEntries');
-        const accessLogEntries = document.getElementById('accessLogEntries');
-        const accessSummary = document.getElementById('accessSummary');
-        const errorLogFilters = document.getElementById('errorLogFilters');
-        const accessLogFilters = document.getElementById('accessLogFilters');
-        const logLimit = document.getElementById('logLimit');
-        const logSearch = document.getElementById('logSearch');
-        let currentLogs = []; // Incident groups currently loaded
-        let currentRawLogs = [];
-        let currentAccessLogs = [];
-        let currentAccessSummary = {};
-        let activeAccessStatus = 'all';
-        const savedLogView = localStorage.getItem('logView');
-        let activeErrorView = savedLogView === 'raw' ? 'raw' : 'grouped';
-        let activeLogSource = localStorage.getItem('logSource') === 'access' || savedLogView === 'access' ? 'access' : 'error';
-        let activeLogView = activeLogSource === 'access' ? 'access' : activeErrorView;
-        let liveRefreshEnabled = false;
-
-        const viewMeta = {
-            overview: ['Overview', 'A quick read on the health of your Apache server.'],
-            logs: ['Log Explorer', 'Search, filter, group, and watch recent Apache log activity.'],
-            security: ['Security', 'Review suspicious clients and evidence before taking action.'],
-            analytics: ['Analytics', 'Explore traffic volume, response health, and visitor behavior.']
-        };
-
-        function showView(viewName) {
-            const selected = viewMeta[viewName] ? viewName : 'overview';
-            document.querySelectorAll('[data-view]').forEach(view => {
-                const active = view.dataset.view === selected;
-                view.hidden = !active;
-                view.classList.toggle('active', active);
-            });
-            document.querySelectorAll('[data-view-link]').forEach(link => {
-                const active = link.dataset.viewLink === selected;
-                link.classList.toggle('active', active);
-                if (active) link.setAttribute('aria-current', 'page');
-                else link.removeAttribute('aria-current');
-            });
-            document.getElementById('view-title').textContent = viewMeta[selected][0];
-            document.getElementById('view-description').textContent = viewMeta[selected][1];
-            document.title = `${viewMeta[selected][0]} · ApacheWatch`;
-
-            if (selected === 'analytics') {
-                requestAnimationFrame(() => {
-                    [trafficChart, statusChart, visitorsChart].forEach(chart => {
-                        if (chart) chart.resize();
-                    });
-                });
-            }
-        }
-
-        function syncViewFromHash() {
-            const requested = window.location.hash.slice(1).toLowerCase();
-            showView(requested === 'incidents' ? 'logs' : requested || 'overview');
-        }
-
-        window.addEventListener('hashchange', syncViewFromHash);
-
-        const savedLogLimit = localStorage.getItem('logLimit');
-        if (savedLogLimit) {
-            logLimit.value = savedLogLimit;
-        }
-
-        setLogSource(activeLogSource);
-        fetchLogs();
-
-        if (localStorage.getItem('tailMode') === 'true') {
-            if (activeLogSource === 'error') setLogView('raw');
-            startTailMode();
-        }
-
-        liveLogButton.addEventListener('click', function() {
-            if (liveRefreshEnabled) {
-                stopTailMode();
-            } else {
-                if (activeLogSource === 'error') setLogView('raw');
-                startTailMode();
-            }
-        });
-
-        logLimit.addEventListener('change', function() {
-            localStorage.setItem('logLimit', this.value);
-            fetchActiveLogData();
-        });
-
-        logSearch.addEventListener('input', function() {
-            renderActiveLogView();
-        });
-
-        document.querySelectorAll('[data-log-source]').forEach(button => {
-            button.addEventListener('click', () => setLogSource(button.dataset.logSource));
-        });
-
-        document.querySelectorAll('[data-error-view]').forEach(button => {
-            button.addEventListener('click', () => {
-                if (button.dataset.errorView === 'grouped' && liveRefreshEnabled) stopTailMode();
-                setLogView(button.dataset.errorView);
-            });
-        });
-
-        document.querySelectorAll('[data-status-filter]').forEach(button => {
-            button.addEventListener('click', () => {
-                activeAccessStatus = button.dataset.statusFilter;
-                document.querySelectorAll('[data-status-filter]').forEach(item => {
-                    item.classList.toggle('active', item === button);
-                });
-                filterAndDisplayAccessLogs();
-            });
-        });
-
-        function setLogSource(source) {
-            const nextSource = source === 'access' ? 'access' : 'error';
-            if (nextSource !== activeLogSource) logSearch.value = '';
-            activeLogSource = nextSource;
-            localStorage.setItem('logSource', activeLogSource);
-            document.querySelectorAll('[data-log-source]').forEach(button => {
-                const active = button.dataset.logSource === activeLogSource;
-                button.classList.toggle('active', active);
-                button.setAttribute('aria-selected', active ? 'true' : 'false');
-            });
-            errorViewTabs.hidden = activeLogSource !== 'error';
-            accessViewTitle.hidden = activeLogSource !== 'access';
-            setLogView(activeLogSource === 'access' ? 'access' : liveRefreshEnabled ? 'raw' : activeErrorView);
-            if (liveRefreshEnabled) startTailMode();
-        }
-
-        function setLogView(view) {
-            activeLogView = view === 'access' ? 'access' : view === 'raw' ? 'raw' : 'grouped';
-            if (activeLogView !== 'access') {
-                activeErrorView = activeLogView;
-                localStorage.setItem('logView', activeErrorView);
-            }
-            document.querySelectorAll('[data-error-view]').forEach(button => {
-                const active = button.dataset.errorView === activeLogView;
-                button.classList.toggle('active', active);
-                button.setAttribute('aria-selected', active ? 'true' : 'false');
-            });
-            logEntries.hidden = activeLogView !== 'grouped';
-            rawLogEntries.hidden = activeLogView !== 'raw';
-            accessLogEntries.hidden = activeLogView !== 'access';
-            errorLogFilters.hidden = activeLogView === 'access';
-            accessLogFilters.hidden = activeLogView !== 'access';
-            accessSummary.hidden = activeLogView !== 'access';
-            document.getElementById('logSourceLabel').textContent = activeLogView === 'access'
-                ? 'Source: Apache access_log'
-                : 'Source: Apache error_log';
-            const helpText = {
-                grouped: 'Similar error-log lines are combined into one issue. “12 occurrences” means it happened 12 times; expand the issue to see the individual lines.',
-                raw: 'Raw recent lines from the Apache error log. Enable auto-refresh to check for new entries every five seconds.',
-                access: 'Recent HTTP requests from the Apache access log. Search by path, IP, method, status, referrer, or user agent.'
-            };
-            document.getElementById('logViewHelp').textContent = helpText[activeLogView];
-            logSearch.placeholder = activeLogView === 'access' ? 'Search requests, IPs, or status' : 'Search messages or URLs';
-            updateLiveLogButton();
-            if (activeLogView === 'raw' && currentRawLogs.length === 0) fetchRawLogs();
-            else if (activeLogView === 'access' && currentAccessLogs.length === 0) fetchAccessLogs();
-            else renderActiveLogView();
-        }
-
-        function renderActiveLogView() {
-            if (activeLogView === 'access') filterAndDisplayAccessLogs();
-            else if (activeLogView === 'raw') filterAndDisplayRawLogs();
-            else filterAndDisplayLogs();
-        }
-
-        function fetchActiveLogData() {
-            if (activeLogView === 'access') fetchAccessLogs();
-            else if (activeLogView === 'raw') fetchRawLogs();
-            else fetchLogs();
-        }
-
-        function startTailMode() {
-            liveRefreshEnabled = true;
-            localStorage.setItem('tailMode', 'true');
-            if (tailInterval) clearInterval(tailInterval);
-            fetchActiveLogData();
-            tailInterval = setInterval(fetchActiveLogData, 5000);
-            updateLiveLogButton();
-        }
-
-        function stopTailMode() {
-            liveRefreshEnabled = false;
-            localStorage.setItem('tailMode', 'false');
-            if (tailInterval) {
-                clearInterval(tailInterval);
-                tailInterval = null;
-            }
-            updateLiveLogButton();
-        }
-
-        function updateLiveLogButton() {
-            liveLogButton.classList.toggle('watching', liveRefreshEnabled);
-            liveLogButton.setAttribute('aria-pressed', liveRefreshEnabled ? 'true' : 'false');
-            liveLogButton.querySelector('.live-log-label').textContent = liveRefreshEnabled ? 'Pause live' : 'Watch live';
-        }
-
-        function filterAndDisplayLogs() {
-            const searchTerm = logSearch.value.toLowerCase().trim();
-
-            if (currentLogs.length === 0) {
-                logEntries.innerHTML = '<div class="log-entry">No log entries found or unable to read log file.</div>';
-                return;
-            }
-
-            // Filter logs based on search term
-            let filteredLogs = currentLogs;
-            if (searchTerm) {
-                filteredLogs = currentLogs.filter(entry => {
-                    return entry.message.toLowerCase().includes(searchTerm) ||
-                           entry.level.toLowerCase().includes(searchTerm) ||
-                           entry.affected_urls.some(url => url.toLowerCase().includes(searchTerm));
-                });
-            }
-
-            if (filteredLogs.length === 0) {
-                logEntries.innerHTML = `<div class="log-entry" style="color: #999;">No logs match "${searchTerm}"</div>`;
-                return;
-            }
-
-            logEntries.innerHTML = filteredLogs.map(entry => {
-                const maxTrend = Math.max(...entry.trend, 1);
-                const bars = entry.trend.map(value => `<span style="height:${Math.max(3, value / maxTrend * 22)}px" title="${value} occurrence${value === 1 ? '' : 's'}"></span>`).join('');
-                const urls = entry.affected_urls.length
-                    ? `<div class="incident-urls"><strong>Affected URLs:</strong> ${entry.affected_urls.map(escapeHtml).join(', ')}</div>`
-                    : '<div class="incident-urls incident-muted">No request URL found in these log entries</div>';
-                const occurrences = entry.occurrences.map(occurrence => `
-                    <div class="occurrence-row">
-                        <time>${escapeHtml(occurrence.timestamp || 'Unknown time')}</time>
-                        <code>${escapeHtml(occurrence.message)}</code>
-                    </div>`).join('');
-                return `<div class="incident-card">
-                    <div class="incident-main"><span class="level level-${escapeHtml(entry.level)}">${escapeHtml(entry.level.toUpperCase())}</span>
-                    <span class="incident-message">${escapeHtml(entry.message)}</span>
-                    <span class="incident-count">${entry.count} ${entry.count === 1 ? 'occurrence' : 'occurrences'}</span></div>
-                    ${urls}
-                    <div class="incident-meta"><span>First: ${formatIncidentTime(entry.first_seen)}</span><span>Last: ${formatIncidentTime(entry.last_seen)}</span>
-                    <span class="incident-trend" aria-label="Occurrence trend">${bars}</span></div>
-                    <details class="incident-details">
-                        <summary>Inspect ${entry.count === 1 ? 'occurrence' : `latest ${entry.occurrences.length} occurrences`}</summary>
-                        <div class="occurrence-list">${occurrences}</div>
-                        ${entry.occurrences_truncated ? `<div class="incident-muted">Showing the latest ${entry.occurrences.length} of ${entry.count} occurrences.</div>` : ''}
-                    </details>
-                </div>`;
-            }).join('');
-        }
-
-        function filterAndDisplayRawLogs() {
-            const searchTerm = logSearch.value.toLowerCase().trim();
-            const filteredLogs = searchTerm
-                ? currentRawLogs.filter(entry =>
-                    entry.message.toLowerCase().includes(searchTerm) ||
-                    entry.level.toLowerCase().includes(searchTerm) ||
-                    (entry.timestamp || '').toLowerCase().includes(searchTerm))
-                : currentRawLogs;
-
-            if (filteredLogs.length === 0) {
-                rawLogEntries.innerHTML = `<div class="raw-log-empty">${searchTerm ? `No log lines match “${escapeHtml(searchTerm)}”.` : 'No recent error-log lines found.'}</div>`;
-                return;
-            }
-
-            rawLogEntries.innerHTML = filteredLogs.slice().reverse().map(entry => `
-                <div class="raw-log-row">
-                    <time>${escapeHtml(entry.timestamp || 'Unknown time')}</time>
-                    <span class="level level-${escapeHtml(entry.level)}">${escapeHtml(entry.level.toUpperCase())}</span>
-                    <code>${escapeHtml(entry.message)}</code>
-                </div>`).join('');
-        }
-
-        function filterAndDisplayAccessLogs() {
-            const searchTerm = logSearch.value.toLowerCase().trim();
-            const filtered = currentAccessLogs.filter(entry => {
-                const statusMatches = activeAccessStatus === 'all' || String(entry.status).startsWith(activeAccessStatus);
-                const searchable = [entry.timestamp, entry.status, entry.method, entry.path, entry.ip,
-                    entry.protocol, entry.referer, entry.user_agent, entry.user].filter(Boolean).join(' ').toLowerCase();
-                return statusMatches && (!searchTerm || searchable.includes(searchTerm));
-            });
-
-            renderAccessSummary();
-            if (filtered.length === 0) {
-                accessLogEntries.innerHTML = `<div class="access-log-empty">${searchTerm || activeAccessStatus !== 'all' ? 'No requests match the current filters.' : 'No recent access-log requests found.'}</div>`;
-                return;
-            }
-
-            accessLogEntries.innerHTML = `
-                <div class="access-log-heading" aria-hidden="true"><span>Time</span><span>Status</span><span>Request</span><span>Path</span><span>Client</span><span>Size</span><span></span></div>
-                ${filtered.map(entry => {
-                    const family = Math.floor(entry.status / 100);
-                    return `<details class="access-request">
-                        <summary class="access-request-row">
-                            <time>${escapeHtml(entry.timestamp)}</time>
-                            <span class="http-status status-${family}xx">${entry.status}</span>
-                            <span class="request-method">${escapeHtml(entry.method)}</span>
-                            <code class="request-path">${escapeHtml(entry.path)}</code>
-                            <code class="request-ip">${escapeHtml(entry.ip)}</code>
-                            <span class="request-size">${formatBytes(entry.size)}</span>
-                            <span class="recommendation-chevron">⌄</span>
-                        </summary>
-                        <div class="access-request-details">
-                            <div><span>Protocol</span><code>${escapeHtml(entry.protocol || 'Unknown')}</code></div>
-                            <div><span>User</span><code>${escapeHtml(entry.user || 'Anonymous')}</code></div>
-                            <div><span>Referrer</span><code>${escapeHtml(entry.referer || 'Direct / unavailable')}</code></div>
-                            <div class="user-agent-detail"><span>User agent</span><code>${escapeHtml(entry.user_agent || 'Unavailable')}</code></div>
+    <dialog class="action-dialog" id="actionDialog" aria-labelledby="actionDialogTitle">
+        <form method="dialog" class="action-dialog-shell">
+            <div class="action-dialog-header">
+                <div>
+                    <span class="action-source" id="actionDialogSource"></span>
+                    <h2 id="actionDialogTitle">Finding details</h2>
+                </div>
+                <button class="action-dialog-close" value="cancel" aria-label="Close">×</button>
+            </div>
+            <div class="action-dialog-body">
+                <div class="action-dialog-meta" id="actionDialogMeta"></div>
+                <p class="action-dialog-summary" id="actionDialogSummary"></p>
+                <section class="action-evidence-section">
+                    <h3 id="actionEvidenceTitle">Evidence</h3>
+                    <div id="actionDialogEvidence"></div>
+                </section>
+                <label class="action-note-field" for="actionNote">
+                    <span>Operator note</span>
+                    <textarea id="actionNote" rows="3" maxlength="2000" placeholder="Add context for the next person reviewing this finding"></textarea>
+                </label>
+                <p class="action-error" id="actionUpdateError" role="alert" hidden></p>
+            </div>
+            <div class="action-dialog-footer">
+                <button type="button" class="text-button" id="actionRelatedButton">View related activity</button>
+                <div class="action-dialog-controls">
+                    <details class="action-more-options" id="actionMoreOptions">
+                        <summary>More options</summary>
+                        <div>
+                            <button type="button" class="secondary-button" data-action-status="snoozed">Snooze for 1 hour</button>
+                            <button type="button" class="secondary-button" data-action-status="dismissed">Dismiss finding</button>
                         </div>
-                    </details>`;
-                }).join('')}`;
-        }
-
-        function renderAccessSummary() {
-            const summary = currentAccessSummary;
-            accessSummary.innerHTML = `
-                <div><strong>${summary.total || 0}</strong><span>Loaded requests</span></div>
-                <div><strong>${summary.unique_ips || 0}</strong><span>Unique clients</span></div>
-                <div class="summary-success"><strong>${summary.success || 0}</strong><span>Successful</span></div>
-                <div class="summary-warning"><strong>${summary.client_errors || 0}</strong><span>Client errors</span></div>
-                <div class="summary-danger"><strong>${summary.server_errors || 0}</strong><span>Server errors</span></div>`;
-        }
-
-        function formatBytes(value) {
-            const bytes = Number(value) || 0;
-            if (bytes < 1024) return `${bytes} B`;
-            if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-            return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-        }
-
-        function escapeHtml(value) {
-            const node = document.createElement('div');
-            node.textContent = value == null ? '' : String(value);
-            return node.innerHTML;
-        }
-
-        function formatIncidentTime(value) {
-            if (!value) return 'Unknown';
-            return new Date(value).toLocaleString();
-        }
-
-        function fetchLogs() {
-            // Get current filter from URL
-            const urlParams = new URLSearchParams(window.location.search);
-            const level = urlParams.get('level');
-            const limit = logLimit.value;
-
-            let apiUrl = '/api/incidents?';
-            const params = [];
-            if (level) params.push(`level=${level}`);
-            if (limit) params.push(`limit=${limit}`);
-            apiUrl += params.join('&');
-
-            fetch(apiUrl)
-                .then(response => response.json())
-                .then(data => {
-                    // Get last N entries based on user preference
-                    const limit = parseInt(logLimit.value);
-                    currentLogs = data.incidents.slice(0, limit);
-                    filterAndDisplayLogs();
-                })
-                .catch(error => {
-                    console.error('Error fetching logs:', error);
-                });
-        }
-
-        function fetchRawLogs() {
-            const urlParams = new URLSearchParams(window.location.search);
-            const level = urlParams.get('level');
-            const params = new URLSearchParams({ limit: logLimit.value });
-            if (level) params.set('level', level);
-
-            fetch(`/api/logs?${params.toString()}`)
-                .then(response => response.json())
-                .then(data => {
-                    currentRawLogs = Array.isArray(data) ? data : [];
-                    filterAndDisplayRawLogs();
-                })
-                .catch(error => {
-                    console.error('Error fetching raw logs:', error);
-                    rawLogEntries.innerHTML = '<div class="raw-log-empty raw-log-error">Unable to read the error log.</div>';
-                });
-        }
-
-        function fetchAccessLogs() {
-            const params = new URLSearchParams({ limit: logLimit.value });
-            fetch(`/api/access-logs?${params.toString()}`)
-                .then(response => response.json())
-                .then(data => {
-                    currentAccessLogs = data.entries || [];
-                    currentAccessSummary = data.summary || {};
-                    filterAndDisplayAccessLogs();
-                })
-                .catch(error => {
-                    console.error('Error fetching access logs:', error);
-                    accessLogEntries.innerHTML = '<div class="access-log-empty access-log-error">Unable to read the access log.</div>';
-                });
-        }
-
-        // Fetch access log analytics
-        function fetchAccessStats() {
-            fetch('/api/access-stats')
-                .then(response => response.json())
-                .then(stats => {
-                    // Display top IPs with hostname and bot detection
-                    const topIpsDiv = document.getElementById('topIps');
-                    if (stats.top_ips && stats.top_ips.length > 0) {
-                        topIpsDiv.innerHTML = stats.top_ips.map(item => {
-                            // Build bot/human badge
-                            let badge = '';
-                            if (item.is_bot === true) {
-                                const botName = item.bot_name || 'Bot';
-                                const botType = item.bot_type || '';
-                                const title = botType ? `${botName} - ${botType}` : botName;
-                                badge = `<span class="badge badge-bot" title="${title}">${botName}</span>`;
-                            } else if (item.is_bot === false) {
-                                badge = `<span class="badge badge-human">User</span>`;
-                            } else {
-                                badge = `<span class="badge badge-unknown">Unknown</span>`;
-                            }
-
-                            return `
-                                <div class="stat-row ip-row">
-                                    <div class="ip-info">
-                                        <div class="ip-main">
-                                            <span class="stat-label">${item.ip}</span>
-                                            ${badge}
-                                        </div>
-                                        ${item.hostname ? `<div class="ip-details">${item.hostname}</div>` : ''}
-                                    </div>
-                                    <span class="stat-value">${item.requests}</span>
-                                </div>
-                            `;
-                        }).join('');
-                    } else {
-                        topIpsDiv.innerHTML = '<div style="color: #999;">No data available</div>';
-                    }
-
-                    // Update bot stats
-                    if (stats.bot_stats) {
-                        document.getElementById('humanCount').textContent = stats.bot_stats.total_humans || 0;
-                        document.getElementById('botCount').textContent = stats.bot_stats.total_bots || 0;
-                        document.getElementById('botPercentage').textContent = stats.bot_stats.bot_percentage || 0;
-                    }
-
-                    // Display top pages
-                    const topPagesDiv = document.getElementById('topPages');
-                    if (stats.top_pages && stats.top_pages.length > 0) {
-                        topPagesDiv.innerHTML = stats.top_pages.map(item => `
-                            <div class="stat-row">
-                                <span class="stat-label">${item.path}</span>
-                                <span class="stat-value">${item.requests}</span>
-                            </div>
-                        `).join('');
-                    } else {
-                        topPagesDiv.innerHTML = '<div style="color: #999;">No data available</div>';
-                    }
-                })
-                .catch(error => {
-                    console.error('Error fetching access stats:', error);
-                    document.getElementById('topIps').innerHTML = '<div style="color: #ef4444;">Error loading data</div>';
-                    document.getElementById('topPages').innerHTML = '<div style="color: #ef4444;">Error loading data</div>';
-                });
-        }
-
-        function recommendationLabel(action) {
-            if (action === 'block_ip') return 'Block IP';
-            if (action === 'consider_range') return 'Review range';
-            return 'Watch';
-        }
-
-        function copyRule(button, value) {
-            navigator.clipboard.writeText(value).then(() => {
-                const original = button.textContent;
-                button.textContent = 'Copied';
-                setTimeout(() => { button.textContent = original; }, 1200);
-            });
-        }
-
-        let activeThreatFilter = 'all';
-
-        function applyThreatFilter(filter) {
-            activeThreatFilter = activeThreatFilter === filter ? 'all' : filter;
-            document.querySelectorAll('[data-threat-filter]').forEach(button => {
-                const active = activeThreatFilter === button.dataset.threatFilter;
-                button.classList.toggle('active', active);
-                button.setAttribute('aria-pressed', active ? 'true' : 'false');
-            });
-            document.querySelectorAll('#blockRecommendations [data-action]').forEach(row => {
-                row.hidden = activeThreatFilter !== 'all' && row.dataset.action !== activeThreatFilter;
-            });
-        }
-
-        function fetchBlockRecommendations() {
-            fetch('/api/block-recommendations')
-                .then(response => response.json())
-                .then(data => {
-                    const container = document.getElementById('blockRecommendations');
-                    document.getElementById('securityScanMeta').textContent =
-                        `${data.entries_scanned.toLocaleString()} requests scanned`;
-                    const blockCount = data.recommendations.filter(item => item.action === 'block_ip').length;
-                    const rangeCount = data.recommendations.filter(item => item.action === 'consider_range').length;
-                    const watchCount = data.recommendations.filter(item => item.action === 'watch').length;
-                    document.getElementById('securitySummary').innerHTML = `
-                        <button type="button" class="threat-stat threat-stat-danger" data-threat-filter="block_ip" aria-pressed="false" ${blockCount ? '' : 'disabled'}><strong>${blockCount}</strong><span>Block candidates</span></button>
-                        <button type="button" class="threat-stat threat-stat-range" data-threat-filter="consider_range" aria-pressed="false" ${rangeCount ? '' : 'disabled'}><strong>${rangeCount}</strong><span>Ranges to review</span></button>
-                        <button type="button" class="threat-stat threat-stat-watch" data-threat-filter="watch" aria-pressed="false" ${watchCount ? '' : 'disabled'}><strong>${watchCount}</strong><span>IPs to watch</span></button>`;
-                    document.querySelectorAll('[data-threat-filter]').forEach(button => {
-                        button.addEventListener('click', () => applyThreatFilter(button.dataset.threatFilter));
-                    });
-                    if (!data.recommendations.length) {
-                        document.getElementById('securitySummary').classList.add('all-clear');
-                        container.innerHTML = '<div class="security-empty">No clients currently meet the recommendation threshold.</div>';
-                        return;
-                    }
-                    document.getElementById('securitySummary').classList.remove('all-clear');
-                    container.innerHTML = data.recommendations.map(item => {
-                        const paths = item.suspicious_paths.length
-                            ? `<div class="recommendation-paths"><div><strong>Flagged URLs</strong><span>Requests matching common scanner targets</span></div><div class="flagged-url-list">${item.suspicious_paths.map(path => `<code>${escapeHtml(path)}</code>`).join('')}</div></div>`
-                            : '';
-                        const members = item.member_ips
-                            ? `<div class="recommendation-members"><strong>Member IPs:</strong> ${item.member_ips.map(escapeHtml).join(', ')}</div>`
-                            : '';
-                        const severity = item.score >= 75 ? 'Critical' : item.score >= 50 ? 'High' : 'Review';
-                        return `<details class="recommendation-card recommendation-${item.action}" data-action="${item.action}">
-                            <summary class="recommendation-row">
-                                <span class="recommendation-action">${recommendationLabel(item.action)}</span>
-                                <code class="recommendation-target">${escapeHtml(item.target)}</code>
-                                <span class="recommendation-primary-reason">${escapeHtml(item.reasons[0] || 'Suspicious behavior')}</span>
-                                <span class="recommendation-quick-stats">${item.requests} req · ${item.client_errors} errors</span>
-                                <span class="risk-pill risk-${severity.toLowerCase()}">${severity} ${item.score}</span>
-                                <span class="recommendation-chevron">⌄</span>
-                            </summary>
-                            <div class="recommendation-evidence">
-                                <div class="evidence-metrics">
-                                    <div><strong>${item.requests}</strong><span>Requests</span></div>
-                                    <div><strong>${item.client_errors}</strong><span>Client errors</span></div>
-                                    ${item.peak_requests_per_minute != null ? `<div><strong>${item.peak_requests_per_minute}</strong><span>Peak requests/min</span></div>` : ''}
-                                    <div><strong>${escapeHtml(item.confidence)}</strong><span>Confidence</span></div>
-                                </div>
-                                <div class="evidence-columns ${item.suspicious_paths.length ? '' : 'evidence-columns-single'}">
-                                    <section class="evidence-section">
-                                        <h4>Why this appeared</h4>
-                                        <ul class="recommendation-reasons">${item.reasons.map(reason => `<li>${escapeHtml(reason)}</li>`).join('')}</ul>
-                                        ${members}
-                                    </section>
-                                    ${paths}
-                                </div>
-                                <div class="rule-actions">
-                                    <span>Copy proposed rule:</span>
-                                    <button type="button" data-rule="${escapeHtml(item.rules.apache)}">Apache</button>
-                                    <button type="button" data-rule="${escapeHtml(item.rules.ufw)}">UFW</button>
-                                </div>
-                            </div>
-                        </details>`;
-                    }).join('');
-                    container.querySelectorAll('[data-rule]').forEach(button => {
-                        button.addEventListener('click', () => copyRule(button, button.dataset.rule));
-                    });
-                    if (activeThreatFilter !== 'all') {
-                        const selected = document.querySelector(`[data-threat-filter="${activeThreatFilter}"]`);
-                        activeThreatFilter = 'all';
-                        if (selected) applyThreatFilter(selected.dataset.threatFilter);
-                    }
-                })
-                .catch(error => {
-                    console.error('Error fetching block recommendations:', error);
-                    document.getElementById('blockRecommendations').innerHTML =
-                        '<div class="security-empty security-error">Unable to analyze blocking recommendations.</div>';
-                });
-        }
-
-        // Load analytics on page load
-        fetchAccessStats();
-        fetchBlockRecommendations();
-
-        // Initialize and load traffic charts
-        let trafficChart, statusChart, visitorsChart;
-        const chartConfigs = {};
-
-        function chartApiUrl(hours) {
-            return hours === 'all' ? '/api/traffic-chart?hours=10000' : `/api/traffic-chart?hours=${hours}`;
-        }
-
-        function buildLabels(data, resolution) {
-            return data.map(item => {
-                if (resolution === 'daily') {
-                    const [y, m, d] = item.hour.split('-').map(Number);
-                    return new Date(y, m - 1, d).toLocaleString('en-US', { month: 'short', day: 'numeric' });
-                }
-                return new Date(item.hour).toLocaleString('en-US', {
-                    month: 'short', day: 'numeric',
-                    hour: '2-digit', minute: '2-digit', hour12: false
-                });
-            });
-        }
-
-        function initTimeSelect(id, storageKey, fetchFn) {
-            const sel = document.getElementById(id);
-            const saved = localStorage.getItem(storageKey);
-            if (saved) sel.value = saved;
-            sel.addEventListener('change', function() {
-                localStorage.setItem(storageKey, this.value);
-                fetchFn();
-            });
-            return sel;
-        }
-
-        const trafficTimeSelect  = initTimeSelect('trafficTimeRange',  'trafficTimeRange',  () => fetchTrafficChart());
-        const statusTimeSelect   = initTimeSelect('statusTimeRange',   'statusTimeRange',   () => fetchStatusChart());
-        const visitorsTimeSelect = initTimeSelect('visitorsTimeRange', 'visitorsTimeRange', () => fetchVisitorsChart());
-
-        function fetchTrafficChart() {
-            fetch(chartApiUrl(trafficTimeSelect.value))
-                .then(r => r.json())
-                .then(result => {
-                    const data = result.data;
-                    if (!data || data.length === 0) return;
-                    const labels = buildLabels(data, result.resolution);
-                    const trafficCtx = document.getElementById('trafficChart').getContext('2d');
-                    chartConfigs.traffic = {
-                        type: 'line',
-                        data: {
-                            labels,
-                            datasets: [{
-                                label: 'Total Requests',
-                                data: data.map(i => i.requests),
-                                borderColor: '#3b82f6',
-                                backgroundColor: 'rgba(59, 130, 246, 0.1)',
-                                tension: 0.3,
-                                fill: true
-                            }]
-                        },
-                        options: {
-                            responsive: true,
-                            maintainAspectRatio: false,
-                            plugins: { legend: { display: true, position: 'top' } },
-                            scales: { y: { beginAtZero: true, ticks: { precision: 0 } } }
-                        }
-                    };
-                    if (trafficChart) trafficChart.destroy();
-                    trafficChart = new Chart(trafficCtx, JSON.parse(JSON.stringify(chartConfigs.traffic)));
-                })
-                .catch(error => console.error('Error fetching traffic data:', error));
-        }
-
-        function fetchStatusChart() {
-            fetch(chartApiUrl(statusTimeSelect.value))
-                .then(r => r.json())
-                .then(result => {
-                    const data = result.data;
-                    if (!data || data.length === 0) return;
-                    const labels = buildLabels(data, result.resolution);
-                    const statusCtx = document.getElementById('statusChart').getContext('2d');
-                    chartConfigs.status = {
-                        type: 'bar',
-                        data: {
-                            labels,
-                            datasets: [
-                                { label: 'Success (200-299)',      data: data.map(i => i.status_success),       backgroundColor: 'rgba(16, 185, 129, 0.7)', stack: 'stack0' },
-                                { label: 'Redirects (300-399)',    data: data.map(i => i.status_redirects),     backgroundColor: 'rgba(59, 130, 246, 0.7)',  stack: 'stack0' },
-                                { label: 'Client Errors (400-499)', data: data.map(i => i.status_client_errors), backgroundColor: 'rgba(245, 158, 11, 0.7)', stack: 'stack0' },
-                                { label: 'Server Errors (500-599)', data: data.map(i => i.status_server_errors), backgroundColor: 'rgba(239, 68, 68, 0.7)',  stack: 'stack0' }
-                            ]
-                        },
-                        options: {
-                            responsive: true,
-                            maintainAspectRatio: false,
-                            plugins: { legend: { display: true, position: 'top' } },
-                            scales: {
-                                x: { stacked: true },
-                                y: { stacked: true, beginAtZero: true, ticks: { precision: 0 } }
-                            }
-                        }
-                    };
-                    if (statusChart) statusChart.destroy();
-                    statusChart = new Chart(statusCtx, JSON.parse(JSON.stringify(chartConfigs.status)));
-                })
-                .catch(error => console.error('Error fetching status data:', error));
-        }
-
-        function fetchVisitorsChart() {
-            fetch(chartApiUrl(visitorsTimeSelect.value))
-                .then(r => r.json())
-                .then(result => {
-                    const data = result.data;
-                    if (!data || data.length === 0) return;
-                    const labels = buildLabels(data, result.resolution);
-                    const visitorsCtx = document.getElementById('visitorsChart').getContext('2d');
-                    chartConfigs.visitors = {
-                        type: 'bar',
-                        data: {
-                            labels,
-                            datasets: [{
-                                label: 'Unique IPs',
-                                data: data.map(i => i.unique_ips),
-                                backgroundColor: 'rgba(139, 92, 246, 0.7)',
-                                borderColor: 'rgba(139, 92, 246, 1)',
-                                borderWidth: 1
-                            }]
-                        },
-                        options: {
-                            responsive: true,
-                            maintainAspectRatio: false,
-                            plugins: { legend: { display: true, position: 'top' } },
-                            scales: { y: { beginAtZero: true, ticks: { precision: 0 } } }
-                        }
-                    };
-                    if (visitorsChart) visitorsChart.destroy();
-                    visitorsChart = new Chart(visitorsCtx, JSON.parse(JSON.stringify(chartConfigs.visitors)));
-                })
-                .catch(error => console.error('Error fetching visitors data:', error));
-        }
-
-        // Load charts on page load
-        fetchTrafficChart();
-        fetchStatusChart();
-        fetchVisitorsChart();
-
-        // ── Auto-refresh ──────────────────────────────────────────────────────
-
-        let autoRefreshTimer = null;
-
-        function barClass(pct) {
-            return 'bar-fill ' + (pct > 90 ? 'bad' : pct > 70 ? 'warn' : 'good');
-        }
-
-        function refreshMetrics() {
-            fetch('/api/metrics')
-                .then(r => r.json())
-                .then(m => {
-                    document.getElementById('cpu-value').textContent = m.cpu_percent + '%';
-                    const cpuBar = document.getElementById('cpu-bar');
-                    cpuBar.style.width = m.cpu_percent + '%';
-                    cpuBar.className = barClass(m.cpu_percent);
-
-                    document.getElementById('mem-value').textContent = m.memory.percent + '%';
-                    document.getElementById('mem-sub').textContent = m.memory.used_gb + ' GB / ' + m.memory.total_gb + ' GB';
-                    const memBar = document.getElementById('mem-bar');
-                    memBar.style.width = m.memory.percent + '%';
-                    memBar.className = barClass(m.memory.percent);
-
-                    document.getElementById('disk-value').textContent = m.disk.percent + '%';
-                    document.getElementById('disk-sub').textContent = m.disk.used_gb + ' GB / ' + m.disk.total_gb + ' GB';
-                    const diskBar = document.getElementById('disk-bar');
-                    diskBar.style.width = m.disk.percent + '%';
-                    diskBar.className = barClass(m.disk.percent);
-
-                    const now = new Date();
-                    document.getElementById('last-updated').textContent =
-                        'Last updated: ' + now.toLocaleTimeString();
-                })
-                .catch(() => {});
-        }
-
-        function refreshAlerts() {
-            fetch('/api/alerts')
-                .then(r => r.json())
-                .then(data => {
-                    const alerts = data.alerts.slice(0, 5);
-                    const critCount = alerts.filter(a => a.severity === 'critical').length;
-                    const warnCount = alerts.filter(a => a.severity !== 'critical').length;
-
-                    let metaHtml = '';
-                    if (critCount > 0) metaHtml += `<span class="badge badge-critical">${critCount} critical</span>`;
-                    if (warnCount > 0) metaHtml += `<span class="badge badge-warning">${warnCount} warning</span>`;
-                    if (alerts.length === 0) metaHtml += '<span class="badge badge-ok">All clear</span>';
-                    metaHtml += '<span class="alerts-chevron">&#8964;</span>';
-                    document.getElementById('alerts-meta').innerHTML = metaHtml;
-
-                    const bodyEl = document.getElementById('alerts-body');
-                    if (alerts.length > 0) {
-                        bodyEl.innerHTML = '<div class="alerts-list">' + alerts.map(a => {
-                            const ts = a.timestamp.substring(0, 16).replace('T', ' ');
-                            return `<div class="alert-row alert-${a.severity}">
-                                <span class="badge badge-${a.severity}">${a.severity.toUpperCase()}</span>
-                                <span class="alert-message">${a.message}</span>
-                                <span class="alert-time">${ts}</span>
-                            </div>`;
-                        }).join('') + '</div>';
-                    } else {
-                        bodyEl.innerHTML = '<div class="alert-empty">No alerts recorded.</div>';
-                    }
-                })
-                .catch(() => {});
-        }
-
-        function startAutoRefresh(seconds) {
-            if (autoRefreshTimer) clearInterval(autoRefreshTimer);
-            autoRefreshTimer = null;
-            if (seconds > 0) {
-                autoRefreshTimer = setInterval(() => {
-                    refreshMetrics();
-                    refreshAlerts();
-                }, seconds * 1000);
-            }
-        }
-
-        const autoRefreshSelect = document.getElementById('autoRefreshSelect');
-        const savedRefresh = localStorage.getItem('autoRefresh');
-        if (savedRefresh !== null) autoRefreshSelect.value = savedRefresh;
-        autoRefreshSelect.addEventListener('change', function() {
-            localStorage.setItem('autoRefresh', this.value);
-            startAutoRefresh(parseInt(this.value));
-        });
-        startAutoRefresh(parseInt(autoRefreshSelect.value));
-
-        // ── Chart modal ───────────────────────────────────────────────────────
-
-        let modalChartInstance = null;
-
-        function openChartModal(key, title) {
-            const cfg = chartConfigs[key];
-            if (!cfg) return;
-
-            document.getElementById('modal-chart-title').textContent = title;
-            document.getElementById('chart-modal').classList.add('open');
-            document.body.style.overflow = 'hidden';
-
-            if (modalChartInstance) { modalChartInstance.destroy(); modalChartInstance = null; }
-            const ctx = document.getElementById('modalChart').getContext('2d');
-            modalChartInstance = new Chart(ctx, JSON.parse(JSON.stringify(cfg)));
-        }
-
-        function closeChartModal() {
-            document.getElementById('chart-modal').classList.remove('open');
-            document.body.style.overflow = '';
-            if (modalChartInstance) { modalChartInstance.destroy(); modalChartInstance = null; }
-        }
-
-        document.addEventListener('keydown', e => { if (e.key === 'Escape') closeChartModal(); });
-        syncViewFromHash();
-    </script>
-
-    <div id="chart-modal" class="chart-modal">
-        <div class="chart-modal-backdrop" onclick="closeChartModal()"></div>
-        <div class="chart-modal-dialog">
-            <div class="chart-modal-header">
-                <span id="modal-chart-title"></span>
-                <button class="chart-modal-close" onclick="closeChartModal()">&times;</button>
+                    </details>
+                    <button type="button" class="primary-button" data-action-status="acknowledged">Mark in progress</button>
+                    <button type="button" class="primary-button" data-action-status="new" hidden>Reopen finding</button>
+                    <button type="button" class="primary-button" data-action-status="resolved">Mark resolved</button>
+                </div>
             </div>
-            <div class="chart-modal-body">
-                <canvas id="modalChart"></canvas>
-            </div>
+        </form>
+    </dialog>
+
+
+
+    <dialog id="chart-modal" class="chart-modal" aria-labelledby="modal-chart-title">
+        <div class="chart-modal-header">
+            <h2 id="modal-chart-title">Chart</h2>
+            <button type="button" class="chart-modal-close" id="closeChartModal" aria-label="Close chart">×</button>
         </div>
-    </div>
+        <div class="chart-modal-body"><canvas id="modalChart" role="img" aria-label="Expanded traffic chart"></canvas></div>
+    </dialog>
+    <script src="{{ url_for('static', filename='js/dashboard.js') }}" defer></script>
 </body>
 </html>

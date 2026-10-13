@@ -9,6 +9,7 @@ import re
 import sqlite3
 import hashlib
 import ipaddress
+import json
 import concurrent.futures
 from collections import Counter, defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -113,6 +114,82 @@ def collect_metrics():
             "used_gb": round(disk.used / (1024**3), 2),
             "total_gb": round(disk.total / (1024**3), 2)
         }
+    }
+
+
+def collect_monitoring_health(config_data):
+    """Describe Apache process visibility and configured log-source availability."""
+    containerized = os.path.exists("/.dockerenv") or os.path.exists("/run/.containerenv")
+    apache_processes = []
+    process_names = {"apache2", "httpd", "httpd-prefork", "httpd-worker", "httpd-event"}
+    try:
+        for process in psutil.process_iter(["pid", "name", "create_time"]):
+            try:
+                name = (process.info.get("name") or "").lower()
+                if name in process_names:
+                    apache_processes.append({
+                        "pid": process.info.get("pid"),
+                        "name": process.info.get("name"),
+                        "create_time": process.info.get("create_time"),
+                    })
+            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+                continue
+    except (psutil.Error, OSError):
+        apache_processes = []
+
+    started_at = None
+    uptime_seconds = None
+    start_times = [item["create_time"] for item in apache_processes if item.get("create_time")]
+    if start_times:
+        oldest_start = min(start_times)
+        started_at = datetime.fromtimestamp(oldest_start).isoformat()
+        uptime_seconds = max(0, int(datetime.now().timestamp() - oldest_start))
+
+    def log_health(label, path):
+        result = {
+            "label": label,
+            "path": path or None,
+            "configured": bool(path),
+            "exists": False,
+            "readable": False,
+            "size_bytes": None,
+            "modified_at": None,
+            "age_seconds": None,
+            "status": "not_configured",
+        }
+        if not path:
+            return result
+        if not os.path.exists(path):
+            result["status"] = "missing"
+            return result
+
+        result["exists"] = True
+        result["readable"] = os.access(path, os.R_OK)
+        result["status"] = "ready" if result["readable"] else "unreadable"
+        try:
+            modified = os.path.getmtime(path)
+            result["size_bytes"] = os.path.getsize(path)
+            result["modified_at"] = datetime.fromtimestamp(modified).isoformat()
+            result["age_seconds"] = max(0, int(datetime.now().timestamp() - modified))
+        except OSError:
+            pass
+        return result
+
+    apache_config = config_data.get("apache", {})
+    return {
+        "apache": {
+            "detected": bool(apache_processes),
+            "process_count": len(apache_processes),
+            "started_at": started_at,
+            "uptime_seconds": uptime_seconds,
+            "status": "detected" if apache_processes else "not_detected",
+            "containerized": containerized,
+        },
+        "logs": [
+            log_health("Error log", apache_config.get("error_log", "")),
+            log_health("Access log", apache_config.get("access_log", "")),
+        ],
+        "checked_at": datetime.now().isoformat(),
     }
 
 # =============================================================================
@@ -823,8 +900,293 @@ def init_database(db_path):
         CREATE INDEX IF NOT EXISTS idx_alerts_timestamp ON alerts(timestamp)
     ''')
 
+    # Durable workflow state for alerts, error incidents, and traffic threats.
+    # The source_key remains stable when the same finding is observed again,
+    # allowing evidence to refresh without losing an operator's decision.
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS action_items (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            source TEXT NOT NULL,
+            source_key TEXT NOT NULL UNIQUE,
+            severity TEXT NOT NULL,
+            title TEXT NOT NULL,
+            summary TEXT NOT NULL,
+            evidence_json TEXT NOT NULL DEFAULT '{}',
+            related_view TEXT,
+            related_query TEXT,
+            status TEXT NOT NULL DEFAULT 'new',
+            note TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            last_seen TEXT NOT NULL,
+            snoozed_until TEXT,
+            occurrence_count INTEGER NOT NULL DEFAULT 1,
+            currently_observed INTEGER NOT NULL DEFAULT 1
+        )
+    ''')
+
+    cursor.execute('''
+        CREATE INDEX IF NOT EXISTS idx_action_items_status
+        ON action_items(status, updated_at)
+    ''')
+
     conn.commit()
     conn.close()
+
+
+ACTION_ITEM_STATUSES = {"new", "acknowledged", "snoozed", "resolved", "dismissed"}
+
+
+def build_action_candidates(metrics=None, access_entries=None, error_entries=None):
+    """Build a unified set of actionable findings from current observations."""
+    if metrics is None:
+        metrics = collect_metrics()
+    if access_entries is None:
+        access_entries = parse_access_log(
+            config["apache"].get("access_log", ""), max_lines=10000
+        )
+    if error_entries is None:
+        error_entries = parse_error_log(
+            config["apache"].get("error_log", ""), max_lines=2000
+        )
+
+    access_stats = analyze_access_logs(access_entries)
+    alerts = evaluate_alerts(metrics, access_stats, config)
+    incidents = group_error_incidents(error_entries, limit=50)
+    recommendations = analyze_block_recommendations(access_entries, config.get("security"))
+    candidates = []
+
+    alert_titles = {
+        "disk_percent": "Disk usage is above threshold",
+        "server_errors_5xx": "Server errors are above threshold",
+        "client_errors_4xx": "Client errors are above threshold",
+        "requests_per_ip": "One client is generating heavy traffic",
+        "bot_percentage": "Bot traffic is above threshold",
+    }
+    alert_views = {
+        "disk_percent": "overview",
+        "server_errors_5xx": "logs",
+        "client_errors_4xx": "logs",
+        "requests_per_ip": "security",
+        "bot_percentage": "analytics",
+    }
+    for alert in alerts:
+        alert_type = alert["alert_type"]
+        candidates.append({
+            "source": "alert",
+            "source_key": f"alert:{alert_type}",
+            "severity": alert["severity"],
+            "title": alert_titles.get(alert_type, "Monitoring threshold exceeded"),
+            "summary": alert["message"],
+            "evidence": {
+                "alert_type": alert_type,
+                "value": alert.get("value"),
+                "threshold": alert.get("threshold"),
+            },
+            "related_view": alert_views.get(alert_type, "overview"),
+            "related_query": "",
+            "occurrence_count": 1,
+        })
+
+    actionable_levels = {"emerg", "alert", "crit", "critical", "error", "warn", "warning"}
+    for incident in incidents:
+        level = incident.get("level", "unknown").lower()
+        # One-off log lines remain available in Log Explorer. The inbox only
+        # promotes recurring problems so it does not become a second raw log.
+        if level not in actionable_levels or incident.get("count", 0) < 2:
+            continue
+        severity = "critical" if level in {"emerg", "alert", "crit", "critical", "error"} else "warning"
+        candidates.append({
+            "source": "error",
+            "source_key": f"error:{incident['id']}",
+            "severity": severity,
+            "title": "Repeated Apache error" if severity == "critical" else "Repeated Apache warning",
+            "summary": incident["message"],
+            "evidence": incident,
+            "related_view": "logs",
+            "related_query": (incident.get("affected_urls") or [""])[0],
+            "occurrence_count": incident.get("count", 1),
+        })
+
+    for recommendation in recommendations:
+        action = recommendation.get("action")
+        target = recommendation.get("target", "Unknown client")
+        score = recommendation.get("score", 0)
+        severity = "critical" if action == "block_ip" and score >= 70 else "warning"
+        title = {
+            "block_ip": f"Review block candidate {target}",
+            "consider_range": f"Review suspicious range {target}",
+            "watch": f"Watch suspicious client {target}",
+        }.get(action, f"Review suspicious traffic from {target}")
+        reasons = recommendation.get("reasons") or []
+        candidates.append({
+            "source": "security",
+            "source_key": f"security:{action}:{target}",
+            "severity": severity,
+            "title": title,
+            "summary": reasons[0] if reasons else "Suspicious access-log activity was detected.",
+            "evidence": recommendation,
+            "related_view": "security",
+            "related_query": target if recommendation.get("target_type") == "ip" else "",
+            "occurrence_count": recommendation.get("requests", 1),
+        })
+
+    return candidates
+
+
+def sync_action_items(db_path, candidates):
+    """Refresh observed findings while preserving their workflow state."""
+    init_database(db_path)
+    now = datetime.now().isoformat()
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    cursor.execute("SELECT source_key, status, currently_observed FROM action_items")
+    previous = {row["source_key"]: dict(row) for row in cursor.fetchall()}
+
+    # A finding can remain in the inbox even after it stops appearing in the
+    # current scan, but the UI should make that distinction visible.
+    cursor.execute("UPDATE action_items SET currently_observed = 0")
+
+    for candidate in candidates:
+        previous_item = previous.get(candidate["source_key"])
+        reappeared_after_resolution = bool(
+            previous_item
+            and previous_item["status"] == "resolved"
+            and not previous_item["currently_observed"]
+        )
+        cursor.execute('''
+            INSERT INTO action_items (
+                source, source_key, severity, title, summary, evidence_json,
+                related_view, related_query, status, note, created_at,
+                updated_at, last_seen, occurrence_count, currently_observed
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'new', '', ?, ?, ?, ?, 1)
+            ON CONFLICT(source_key) DO UPDATE SET
+                severity = excluded.severity,
+                title = excluded.title,
+                summary = excluded.summary,
+                evidence_json = excluded.evidence_json,
+                related_view = excluded.related_view,
+                related_query = excluded.related_query,
+                last_seen = excluded.last_seen,
+                occurrence_count = excluded.occurrence_count,
+                currently_observed = 1
+        ''', (
+            candidate["source"],
+            candidate["source_key"],
+            candidate["severity"],
+            candidate["title"],
+            candidate["summary"],
+            json.dumps(candidate.get("evidence", {}), default=str),
+            candidate.get("related_view"),
+            candidate.get("related_query", ""),
+            now,
+            now,
+            now,
+            max(1, int(candidate.get("occurrence_count", 1))),
+        ))
+        if reappeared_after_resolution:
+            cursor.execute('''
+                UPDATE action_items
+                SET status = 'new', snoozed_until = NULL, updated_at = ?
+                WHERE source_key = ?
+            ''', (now, candidate["source_key"]))
+
+    conn.commit()
+    conn.close()
+
+
+def get_action_items(db_path, status="open", limit=100):
+    """Return action items and workflow summary, reopening expired snoozes."""
+    init_database(db_path)
+    now = datetime.now().isoformat()
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    cursor.execute('''
+        UPDATE action_items
+        SET status = 'new', snoozed_until = NULL, updated_at = ?
+        WHERE status = 'snoozed' AND snoozed_until IS NOT NULL AND snoozed_until <= ?
+    ''', (now, now))
+
+    clauses = []
+    params = []
+    if status == "open":
+        clauses.append("status IN ('new', 'acknowledged')")
+    elif status != "all":
+        if status not in ACTION_ITEM_STATUSES:
+            conn.close()
+            raise ValueError("invalid action item status")
+        clauses.append("status = ?")
+        params.append(status)
+    where_sql = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+    params.append(min(max(int(limit), 1), 500))
+    cursor.execute(f'''
+        SELECT * FROM action_items
+        {where_sql}
+        ORDER BY
+            CASE status WHEN 'new' THEN 0 WHEN 'acknowledged' THEN 1
+                        WHEN 'snoozed' THEN 2 WHEN 'resolved' THEN 3 ELSE 4 END,
+            currently_observed DESC,
+            CASE severity WHEN 'critical' THEN 0 WHEN 'warning' THEN 1 ELSE 2 END,
+            last_seen DESC
+        LIMIT ?
+    ''', params)
+    rows = cursor.fetchall()
+    cursor.execute("SELECT status, COUNT(*) AS count FROM action_items GROUP BY status")
+    counts = {row["status"]: row["count"] for row in cursor.fetchall()}
+    conn.commit()
+    conn.close()
+
+    items = []
+    for row in rows:
+        item = dict(row)
+        try:
+            item["evidence"] = json.loads(item.pop("evidence_json"))
+        except (TypeError, json.JSONDecodeError):
+            item["evidence"] = {}
+            item.pop("evidence_json", None)
+        item["currently_observed"] = bool(item["currently_observed"])
+        items.append(item)
+
+    summary = {name: counts.get(name, 0) for name in ACTION_ITEM_STATUSES}
+    summary["open"] = summary["new"] + summary["acknowledged"]
+    summary["total"] = sum(counts.values())
+    return items, summary
+
+
+def update_action_item(db_path, item_id, status, note=None, snooze_minutes=60):
+    """Apply a workflow decision to one action item."""
+    if status not in ACTION_ITEM_STATUSES:
+        raise ValueError("invalid action item status")
+    init_database(db_path)
+    now = datetime.now()
+    snoozed_until = None
+    if status == "snoozed":
+        try:
+            snooze_minutes = min(max(int(snooze_minutes), 1), 10080)
+        except (TypeError, ValueError):
+            raise ValueError("snooze_minutes must be an integer")
+        snoozed_until = (now + timedelta(minutes=snooze_minutes)).isoformat()
+
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    if note is None:
+        cursor.execute('''
+            UPDATE action_items
+            SET status = ?, updated_at = ?, snoozed_until = ?
+            WHERE id = ?
+        ''', (status, now.isoformat(), snoozed_until, item_id))
+    else:
+        cursor.execute('''
+            UPDATE action_items
+            SET status = ?, note = ?, updated_at = ?, snoozed_until = ?
+            WHERE id = ?
+        ''', (status, str(note)[:2000], now.isoformat(), snoozed_until, item_id))
+    changed = cursor.rowcount
+    conn.commit()
+    conn.close()
+    return bool(changed)
 
 def save_alerts(db_path, alerts, cooldown_minutes=30):
     """Save alerts to SQLite, suppressing repeated alert types during cooldown."""
@@ -1173,6 +1535,12 @@ def api_metrics():
     """Get current metrics as JSON."""
     return jsonify(collect_metrics())
 
+
+@app.route("/api/monitoring-health")
+def api_monitoring_health():
+    """Get Apache process visibility and configured log-source health."""
+    return jsonify(collect_monitoring_health(config))
+
 @app.route("/api/logs")
 def api_logs():
     """Get recent log entries as JSON."""
@@ -1280,6 +1648,54 @@ def api_alerts():
         "alerts": alerts,
         "count": len(alerts)
     })
+
+
+@app.route("/api/action-items")
+def api_action_items():
+    """Return the unified operator inbox and refresh its current evidence."""
+    from flask import request
+
+    status = request.args.get("status", "open")
+    try:
+        limit = min(max(int(request.args.get("limit", 100)), 1), 500)
+        candidates = build_action_candidates()
+        sync_action_items(config["database"], candidates)
+        items, summary = get_action_items(config["database"], status=status, limit=limit)
+    except ValueError as error:
+        return jsonify({"error": str(error)}), 400
+
+    return jsonify({
+        "items": items,
+        "count": len(items),
+        "summary": summary,
+        "refreshed_at": datetime.now().isoformat(),
+    })
+
+
+@app.route("/api/action-items/<int:item_id>", methods=["PATCH"])
+def api_update_action_item(item_id):
+    """Acknowledge, snooze, resolve, dismiss, or reopen a finding."""
+    from flask import request
+
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return jsonify({"error": "a JSON request body is required"}), 400
+    status = payload.get("status")
+    if not status:
+        return jsonify({"error": "status is required"}), 400
+    try:
+        changed = update_action_item(
+            config["database"],
+            item_id,
+            status,
+            note=payload.get("note"),
+            snooze_minutes=payload.get("snooze_minutes", 60),
+        )
+    except ValueError as error:
+        return jsonify({"error": str(error)}), 400
+    if not changed:
+        return jsonify({"error": "action item not found"}), 404
+    return jsonify({"ok": True, "id": item_id, "status": status})
 
 @app.route("/api/traffic-chart")
 def api_traffic_chart():

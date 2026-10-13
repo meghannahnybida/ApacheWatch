@@ -84,6 +84,7 @@ web:
 - `GET /api/history` - Metrics history (JSON)
 - `GET /api/access-stats` - Access log analytics (top IPs, pages, status codes)
 - `GET /api/access-logs?limit=100` - Recent parsed access-log requests for interactive inspection
+- `GET /api/log-tail?source=error&limit=100` - Original recent error or access log lines in file order (up to 1,000 lines)
 - `GET /api/block-recommendations` - Advisory IP/range recommendations with evidence and proposed Apache/UFW rules
 - `GET /api/action-items?status=open` - Unified alert, recurring-error, and traffic-threat inbox
 - `PATCH /api/action-items/<id>` - Acknowledge, snooze, resolve, dismiss, or reopen a finding
@@ -147,6 +148,7 @@ Refresh the dashboard, then check the Recent Alerts panel or open `http://localh
 
 - **Real-time Monitoring**: Live CPU, memory, and disk metrics
 - **Log Analysis**: Parse and filter Apache error logs by severity
+- **Terminal View**: View original error or access log lines, with live polling every five seconds and optional automatic scrolling
 - **Traffic Analytics**: Analyze access patterns, top pages, and visitor IPs
 - **IP Visitor Analysis**: Identify bots vs real users via reverse DNS hostname lookup
   - Detects search engine bots (Googlebot, Bingbot, etc.)

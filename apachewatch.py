@@ -1553,6 +1553,33 @@ def api_logs():
     return jsonify(logs[-limit:])
 
 
+@app.route("/api/log-tail")
+def api_log_tail():
+    """Return unchanged recent lines from a configured log, in file order."""
+    from flask import request
+
+    source = request.args.get("source", "error")
+    if source not in {"error", "access"}:
+        return jsonify({"error": "source must be error or access"}), 400
+    try:
+        limit = min(max(int(request.args.get("limit", 100)), 1), 1000)
+    except ValueError:
+        return jsonify({"error": "limit must be an integer"}), 400
+
+    path = config["apache"].get(f"{source}_log")
+    if not path:
+        return jsonify({"error": f"No {source} log file is configured."}), 503
+    try:
+        lines = _tail_file(path, limit)
+    except FileNotFoundError:
+        return jsonify({"error": f"The {source} log file was not found."}), 404
+    except PermissionError:
+        return jsonify({"error": f"ApacheWatch cannot read the {source} log file. Check its file permissions."}), 403
+    except OSError:
+        return jsonify({"error": f"Unable to read the {source} log file."}), 503
+    return jsonify({"source": source, "filename": Path(path).name, "lines": lines})
+
+
 @app.route("/api/incidents")
 def api_incidents():
     """Get recent error-log entries grouped into incidents."""

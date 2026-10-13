@@ -1,8 +1,13 @@
 let tailInterval = null;
 const liveLogButton = document.getElementById('liveLogButton');
-const errorViewTabs = document.getElementById('errorViewTabs');
 const logEntries = document.getElementById('logEntries');
 const rawLogEntries = document.getElementById('rawLogEntries');
+const terminalOutput = document.getElementById('terminalOutput');
+const terminalMessage = document.getElementById('terminalMessage');
+const terminalFollow = document.getElementById('terminalFollow');
+let terminalFollowEnabled = true;
+let terminalError = '';
+let terminalFilename = 'error.log';
 const accessLogEntries = document.getElementById('accessLogEntries');
 const accessSummary = document.getElementById('accessSummary');
 const errorLogFilters = document.getElementById('errorLogFilters');
@@ -17,9 +22,9 @@ let activeAccessStatus = 'all';
 const initialErrorLevel = new URLSearchParams(window.location.search).get('level') || '';
 let activeErrorLevel = ['', 'error', 'warn', 'notice', 'info'].includes(initialErrorLevel) ? initialErrorLevel : '';
 const savedLogView = localStorage.getItem('logView');
-let activeErrorView = savedLogView === 'raw' ? 'raw' : 'grouped';
+let activeLogFormat = localStorage.getItem('logFormat') === 'terminal' || (!localStorage.getItem('logFormat') && savedLogView === 'raw') ? 'terminal' : 'formatted';
 let activeLogSource = localStorage.getItem('logSource') === 'access' || savedLogView === 'access' ? 'access' : 'error';
-let activeLogView = activeLogSource === 'access' ? 'access' : activeErrorView;
+let activeLogView = activeLogFormat === 'terminal' ? 'raw' : activeLogSource === 'access' ? 'access' : 'grouped';
 let liveRefreshEnabled = false;
 const logRequestIds = { grouped: 0, raw: 0, access: 0 };
 
@@ -85,7 +90,7 @@ setLogSource(activeLogSource);
 fetchLogs();
 
 if (localStorage.getItem('tailMode') === 'true') {
-    if (activeLogSource === 'error') setLogView('raw');
+    setLogView('raw');
     startTailMode();
 }
 
@@ -93,7 +98,7 @@ liveLogButton.addEventListener('click', function() {
     if (liveRefreshEnabled) {
         stopTailMode();
     } else {
-        if (activeLogSource === 'error') setLogView('raw');
+        setLogView('raw');
         startTailMode();
     }
 });
@@ -111,11 +116,23 @@ document.querySelectorAll('[data-log-source]').forEach(button => {
     button.addEventListener('click', () => setLogSource(button.dataset.logSource));
 });
 
-document.querySelectorAll('[data-error-view]').forEach(button => {
+document.querySelectorAll('[data-log-format]').forEach(button => {
     button.addEventListener('click', () => {
-        if (button.dataset.errorView === 'grouped' && liveRefreshEnabled) stopTailMode();
-        setLogView(button.dataset.errorView);
+        if (button.dataset.logFormat === 'formatted' && liveRefreshEnabled) stopTailMode();
+        setLogView(button.dataset.logFormat === 'terminal' ? 'raw' : activeLogSource === 'access' ? 'access' : 'grouped');
     });
+});
+
+terminalFollow.addEventListener('click', () => {
+    terminalFollowEnabled = !terminalFollowEnabled;
+    terminalFollow.setAttribute('aria-pressed', String(terminalFollowEnabled));
+    if (terminalFollowEnabled) terminalOutput.scrollTop = terminalOutput.scrollHeight;
+});
+terminalOutput.addEventListener('scroll', () => {
+    if (terminalFollowEnabled && terminalOutput.scrollHeight - terminalOutput.clientHeight - terminalOutput.scrollTop > 24) {
+        terminalFollowEnabled = false;
+        terminalFollow.setAttribute('aria-pressed', 'false');
+    }
 });
 
 document.querySelectorAll('[data-status-filter]').forEach(button => {
@@ -154,7 +171,14 @@ syncErrorLevelButtons();
 
 function setLogSource(source) {
     const nextSource = source === 'access' ? 'access' : 'error';
-    if (nextSource !== activeLogSource) logSearch.value = '';
+    if (nextSource !== activeLogSource) {
+        logSearch.value = '';
+        currentRawLogs = [];
+        terminalOutput.textContent = '';
+        terminalError = '';
+        ++logRequestIds.raw;
+    }
+    terminalFilename = `${nextSource}.log`;
     activeLogSource = nextSource;
     localStorage.setItem('logSource', activeLogSource);
     document.querySelectorAll('[data-log-source]').forEach(button => {
@@ -162,8 +186,7 @@ function setLogSource(source) {
         button.classList.toggle('active', active);
         button.setAttribute('aria-pressed', String(active));
     });
-    errorViewTabs.hidden = activeLogSource !== 'error';
-    setLogView(activeLogSource === 'access' ? 'access' : liveRefreshEnabled ? 'raw' : activeErrorView);
+    setLogView(activeLogFormat === 'terminal' || liveRefreshEnabled ? 'raw' : activeLogSource === 'access' ? 'access' : 'grouped');
     if (liveRefreshEnabled) startTailMode();
 }
 
@@ -195,32 +218,37 @@ function openLogExplorer(source, query = '', statusFamily = 'all') {
 }
 
 function setLogView(view) {
-    activeLogView = view === 'access' ? 'access' : view === 'raw' ? 'raw' : 'grouped';
-    if (activeLogView !== 'access') {
-        activeErrorView = activeLogView;
-        localStorage.setItem('logView', activeErrorView);
-    }
-    document.querySelectorAll('[data-error-view]').forEach(button => {
-        const active = button.dataset.errorView === activeLogView;
+    activeLogView = view === 'raw' ? 'raw' : activeLogSource === 'access' ? 'access' : 'grouped';
+    activeLogFormat = activeLogView === 'raw' ? 'terminal' : 'formatted';
+    localStorage.setItem('logFormat', activeLogFormat);
+    document.querySelectorAll('[data-log-format]').forEach(button => {
+        const active = button.dataset.logFormat === activeLogFormat;
         button.classList.toggle('active', active);
         button.setAttribute('aria-pressed', String(active));
     });
+    const largeLimit = logLimit.querySelector('[value="500"]');
+    largeLimit.disabled = activeLogView !== 'raw';
+    largeLimit.hidden = activeLogView !== 'raw';
+    if (activeLogView !== 'raw' && Number(logLimit.value) > 100) logLimit.value = '100';
     logEntries.hidden = activeLogView !== 'grouped';
     rawLogEntries.hidden = activeLogView !== 'raw';
     accessLogEntries.hidden = activeLogView !== 'access';
-    errorLogFilters.hidden = activeLogView === 'access';
+    errorLogFilters.hidden = activeLogView !== 'grouped';
     accessLogFilters.hidden = activeLogView !== 'access';
     accessSummary.hidden = activeLogView !== 'access';
     const helpText = {
         grouped: 'Repeated messages are grouped together. Expand an issue for evidence.',
-        raw: 'Individual error-log lines. Watch live checks for new entries every 5 seconds.',
+        raw: 'Original log lines, oldest to newest. Watch live checks for updates every 5 seconds.',
         access: 'Recent requests. Expand a row for its referrer, protocol, and user agent.'
     };
     document.getElementById('logViewHelp').textContent = helpText[activeLogView];
-    logSearch.placeholder = activeLogView === 'access' ? 'Search requests, IPs, or status' : 'Search messages or URLs';
+    logSearch.placeholder = activeLogView === 'raw' ? 'Find text in these lines' : activeLogView === 'access' ? 'Search requests, IPs, or status' : 'Search messages or URLs';
     updateLiveLogButton();
-    if (activeLogView === 'raw' && currentRawLogs.length === 0) fetchRawLogs();
-    else if (activeLogView === 'access' && currentAccessLogs.length === 0) fetchAccessLogs();
+    if (activeLogView === 'raw') {
+        document.getElementById('terminalFile').textContent = terminalFilename;
+        filterAndDisplayRawLogs();
+        fetchRawLogs();
+    } else if (activeLogView === 'access' && currentAccessLogs.length === 0) fetchAccessLogs();
     else renderActiveLogView();
 }
 
@@ -259,13 +287,14 @@ function updateLiveLogButton() {
     liveLogButton.classList.toggle('watching', liveRefreshEnabled);
     liveLogButton.setAttribute('aria-pressed', liveRefreshEnabled ? 'true' : 'false');
     liveLogButton.querySelector('.live-log-label').textContent = liveRefreshEnabled ? 'Pause live' : 'Watch live';
+    if (activeLogView === 'raw') filterAndDisplayRawLogs();
 }
 
 function filterAndDisplayLogs() {
     const searchTerm = logSearch.value.toLowerCase().trim();
 
     if (currentLogs.length === 0) {
-        logEntries.innerHTML = '<div class="empty-state">No recent issues at this severity. Check log file setup below if you expected activity.</div>';
+        logEntries.innerHTML = '<div class="empty-state">No recent issues at this severity. Check the log-file warning on Overview if you expected activity.</div>';
         return;
     }
 
@@ -311,25 +340,19 @@ function filterAndDisplayLogs() {
 }
 
 function filterAndDisplayRawLogs() {
-    const searchTerm = logSearch.value.toLowerCase().trim();
-    const filteredLogs = searchTerm
-        ? currentRawLogs.filter(entry =>
-            entry.message.toLowerCase().includes(searchTerm) ||
-            entry.level.toLowerCase().includes(searchTerm) ||
-            (entry.timestamp || '').toLowerCase().includes(searchTerm))
-        : currentRawLogs;
-
-    if (filteredLogs.length === 0) {
-        rawLogEntries.innerHTML = `<div class="raw-log-empty">${searchTerm ? `No log lines match “${escapeHtml(searchTerm)}”.` : 'No recent error-log lines found.'}</div>`;
-        return;
-    }
-
-    rawLogEntries.innerHTML = filteredLogs.slice().reverse().map(entry => `
-        <div class="raw-log-row">
-            <time>${escapeHtml(entry.timestamp || 'Unknown time')}</time>
-            <span class="level level-${escapeHtml(entry.level)}">${escapeHtml(entry.level.toUpperCase())}</span>
-            <code>${escapeHtml(entry.message)}</code>
-        </div>`).join('');
+    const search = logSearch.value.trim().toLowerCase();
+    const filtered = search ? currentRawLogs.filter(line => line.toLowerCase().includes(search)) : currentRawLogs;
+    const text = filtered.join('\n');
+    const scrollTop = terminalOutput.scrollTop;
+    // Preserve text selection and scroll position when a poll returns the same lines.
+    if (terminalOutput.textContent !== text) terminalOutput.textContent = text;
+    terminalOutput.hidden = filtered.length === 0;
+    terminalMessage.hidden = filtered.length > 0 && !terminalError;
+    terminalMessage.textContent = terminalError || (search ? 'No lines match this search.' : 'No lines in this log yet.');
+    terminalMessage.classList.toggle('raw-log-error', Boolean(terminalError));
+    document.getElementById('terminalFile').textContent = terminalFilename;
+    document.getElementById('terminalStatus').textContent = terminalError ? 'Unable to read log' : `${filtered.length}${search ? ` of ${currentRawLogs.length}` : ''} lines · ${liveRefreshEnabled ? 'Live · 5s' : 'Paused'}`;
+    terminalOutput.scrollTop = terminalFollowEnabled ? terminalOutput.scrollHeight : scrollTop;
 }
 
 function filterAndDisplayAccessLogs() {
@@ -685,20 +708,25 @@ function fetchLogs() {
 
 function fetchRawLogs() {
     const requestId = ++logRequestIds.raw;
-    const params = new URLSearchParams({ limit: logLimit.value });
-    if (activeErrorLevel) params.set('level', activeErrorLevel);
-
-    fetch(`/api/logs?${params.toString()}`)
-        .then(readJSON)
+    const source = activeLogSource;
+    const params = new URLSearchParams({source, limit:logLimit.value});
+    return fetch(`/api/log-tail?${params}`)
+        .then(async response => {
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.error || 'Unable to read this log file.');
+            return data;
+        })
         .then(data => {
-            if (requestId !== logRequestIds.raw) return;
-            currentRawLogs = Array.isArray(data) ? data : [];
+            if (requestId !== logRequestIds.raw || source !== activeLogSource) return;
+            currentRawLogs = data.lines || [];
+            terminalFilename = data.filename || `${source}.log`;
+            terminalError = '';
             filterAndDisplayRawLogs();
         })
         .catch(error => {
-            if (requestId !== logRequestIds.raw) return;
-            console.error('Error fetching raw logs:', error);
-            rawLogEntries.innerHTML = '<div class="raw-log-empty raw-log-error">Unable to read the error log.</div>';
+            if (requestId !== logRequestIds.raw || source !== activeLogSource) return;
+            terminalError = error.message || 'Unable to read this log file.';
+            filterAndDisplayRawLogs();
         });
 }
 
@@ -820,16 +848,8 @@ function fetchMonitoringHealth() {
         });
 }
 
-document.getElementById('openLogSetup').addEventListener('click', event => {
-    event.preventDefault();
-    window.location.hash = 'logs';
-    showView('logs');
-    const setup = document.getElementById('logSourceSetup');
-    setup.open = true;
-    requestAnimationFrame(() => {
-        setup.querySelector('summary').focus();
-        setup.scrollIntoView({block:'center'});
-    });
+document.getElementById('openLogDetails').addEventListener('click', () => {
+    document.getElementById('logProblemDialog').showModal();
 });
 
 function recommendationLabel(action) {

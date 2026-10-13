@@ -88,7 +88,7 @@
                     </div>
                     <div class="log-source-notice" id="logSourceNotice" role="status" hidden>
                         <span id="logSourceNoticeText"></span>
-                        <a href="#logs" class="text-link" id="openLogSetup">Check log setup →</a>
+                        <button type="button" class="text-button" id="openLogDetails">View details</button>
                     </div>
                     <div class="action-overview-list" id="actionOverviewList"></div>
                 </div>
@@ -139,15 +139,15 @@
                                 <button type="button" class="log-source-button" data-log-source="access" aria-pressed="false">Access log</button>
                             </div>
                         </div>
-                        <div class="log-view-tabs" id="errorViewTabs" role="group" aria-label="Error log display">
-                            <button type="button" class="log-view-tab active" data-error-view="grouped" aria-pressed="true">Grouped issues</button>
-                            <button type="button" class="log-view-tab" data-error-view="raw" aria-pressed="false">Raw lines</button>
+                        <div class="log-view-tabs" role="group" aria-label="Log display">
+                            <button type="button" class="log-view-tab active" data-log-format="formatted" aria-pressed="true">Formatted</button>
+                            <button type="button" class="log-view-tab" data-log-format="terminal" aria-pressed="false">Terminal</button>
                         </div>
                     </div>
                     <div class="log-control-bar">
                         <div class="log-toolbar">
                             <label class="search-field" for="logSearch"><span class="sr-only">Search logs</span><input type="search" id="logSearch" placeholder="Search messages or URLs"></label>
-                            <label class="select-field" for="logLimit">Rows <select id="logLimit"><option value="10">10</option><option value="20" selected>20</option><option value="50">50</option><option value="100">100</option></select></label>
+                            <label class="select-field" for="logLimit">Lines <select id="logLimit"><option value="10">10</option><option value="20" selected>20</option><option value="50">50</option><option value="100">100</option><option value="500">500</option></select></label>
                             <button type="button" class="live-log-button" id="liveLogButton" aria-pressed="false"><span class="live-log-dot"></span><span class="live-log-label">Watch live</span></button>
                         </div>
                     </div>
@@ -168,12 +168,12 @@
                     </div>
                     <p class="log-view-help" id="logViewHelp">Repeated messages are grouped together. Expand an issue for evidence.</p>
                     <div id="logEntries"><div class="log-entry">Finding repeated issues...</div></div>
-                    <div id="rawLogEntries" class="raw-log" hidden><div class="log-entry">Loading recent log lines...</div></div>
+                    <div id="rawLogEntries" class="raw-log" hidden>
+                        <div class="terminal-header"><span id="terminalFile">error.log</span><span id="terminalStatus" role="status">Loading…</span><button type="button" class="terminal-follow" id="terminalFollow" aria-pressed="true">Follow output</button></div>
+                        <pre id="terminalOutput" class="terminal-output" tabindex="0" aria-label="Raw log output"></pre>
+                        <p id="terminalMessage" class="raw-log-empty" role="status" hidden></p>
+                    </div>
                     <div id="accessLogEntries" class="access-log" hidden><div class="log-entry">Loading recent requests...</div></div>
-                    <details class="log-source-setup" id="logSourceSetup">
-                        <summary>Log file setup <span class="disclosure-chevron" aria-hidden="true">⌄</span></summary>
-                        <div id="logSourceStatus"><p>Checking log files…</p></div>
-                    </details>
                 </div>
             </section>
 
@@ -270,6 +270,11 @@
     </dialog>
 
 
+
+    <dialog id="logProblemDialog" class="log-problem-dialog" aria-labelledby="logProblemTitle">
+        <div class="chart-modal-header"><h2 id="logProblemTitle">Log files need attention</h2><form method="dialog"><button class="chart-modal-close" aria-label="Close log details">×</button></form></div>
+        <div id="logSourceStatus" class="log-problem-body"></div>
+    </dialog>
 
     <dialog id="chart-modal" class="chart-modal" aria-labelledby="modal-chart-title">
         <div class="chart-modal-header">

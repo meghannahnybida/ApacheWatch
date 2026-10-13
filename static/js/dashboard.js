@@ -242,7 +242,7 @@ function setLogView(view) {
         access: 'Recent requests. Expand a row for its referrer, protocol, and user agent.'
     };
     document.getElementById('logViewHelp').textContent = helpText[activeLogView];
-    logSearch.placeholder = activeLogView === 'raw' ? 'Find text in these lines' : activeLogView === 'access' ? 'Search requests, IPs, or status' : 'Search messages or URLs';
+    logSearch.placeholder = activeLogView === 'raw' ? 'search log' : activeLogView === 'access' ? 'Search requests, IPs, or status' : 'Search messages or URLs';
     updateLiveLogButton();
     if (activeLogView === 'raw') {
         document.getElementById('terminalFile').textContent = terminalFilename;
@@ -351,6 +351,9 @@ function filterAndDisplayRawLogs() {
     terminalMessage.textContent = terminalError || (search ? 'No lines match this search.' : 'No lines in this log yet.');
     terminalMessage.classList.toggle('raw-log-error', Boolean(terminalError));
     document.getElementById('terminalFile').textContent = terminalFilename;
+    // This caption reflects the tail view; log output remains unchanged and selectable.
+    document.getElementById('terminalCommand').textContent = `tail -n ${logLimit.value}${liveRefreshEnabled ? ' -f' : ''} -- ${terminalFilename}`;
+    rawLogEntries.classList.toggle('watching', liveRefreshEnabled);
     document.getElementById('terminalStatus').textContent = terminalError ? 'Unable to read log' : `${filtered.length}${search ? ` of ${currentRawLogs.length}` : ''} lines · ${liveRefreshEnabled ? 'Live · 5s' : 'Paused'}`;
     terminalOutput.scrollTop = terminalFollowEnabled ? terminalOutput.scrollHeight : scrollTop;
 }

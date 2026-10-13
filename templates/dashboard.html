@@ -167,9 +167,11 @@
                     <p class="log-view-help" id="logViewHelp">Repeated messages are grouped together. Expand an issue for evidence.</p>
                     <div id="logEntries"><div class="log-entry">Finding repeated issues...</div></div>
                     <div id="rawLogEntries" class="raw-log" hidden>
-                        <div class="terminal-header"><span id="terminalFile">error.log</span><span id="terminalStatus" role="status">Loading…</span><button type="button" class="terminal-follow" id="terminalFollow" aria-pressed="true">Follow output</button></div>
+                        <div class="terminal-header"><span class="terminal-icon" aria-hidden="true">&gt;_</span><span id="terminalFile">error.log</span><button type="button" class="terminal-follow" id="terminalFollow" aria-pressed="true">Follow output</button></div>
+                        <div class="terminal-command-line" aria-label="Current log view"><span class="terminal-prompt" aria-hidden="true">$</span><code id="terminalCommand">tail -n 20 -- error.log</code></div>
                         <pre id="terminalOutput" class="terminal-output" tabindex="0" aria-label="Raw log output"></pre>
                         <p id="terminalMessage" class="raw-log-empty" role="status" hidden></p>
+                        <div class="terminal-footer"><span class="terminal-state-dot" aria-hidden="true"></span><span id="terminalStatus" role="status">Loading…</span><span class="terminal-mode-label">Log viewer</span></div>
                     </div>
                     <div id="accessLogEntries" class="access-log" hidden><div class="log-entry">Loading recent requests...</div></div>
                 </div>

@@ -1032,7 +1032,32 @@ function makeChartConfig(key, labels, data) {
             if (event.native) event.native.target.style.cursor = elements.length ? 'pointer' : 'default';
         };
     }
+    applyChartTheme(config, key);
     return config;
+}
+
+function applyChartTheme(config, key) {
+    const styles = getComputedStyle(document.documentElement);
+    const color = name => styles.getPropertyValue(name).trim();
+    config.options.plugins.legend.labels.color = color('--muted');
+    config.options.plugins.tooltip = {
+        backgroundColor: color('--surface-hover'), titleColor: color('--ink'),
+        bodyColor: color('--ink'), borderColor: color('--line-strong'), borderWidth: 1
+    };
+    config.options.scales.x.ticks.color = color('--muted');
+    config.options.scales.y.ticks.color = color('--muted');
+    config.options.scales.x.border = {color: color('--line')};
+    config.options.scales.y.grid.color = color('--line');
+    if (key === 'traffic') {
+        config.data.datasets[0].borderColor = color('--accent');
+        config.data.datasets[0].backgroundColor = color('--chart-fill');
+    } else if (key === 'status') {
+        ['--chart-success', '--chart-info', '--chart-warning', '--chart-danger'].forEach((name, index) => {
+            config.data.datasets[index].backgroundColor = color(name);
+        });
+    } else if (key === 'visitors') {
+        config.data.datasets[0].backgroundColor = color('--chart-purple');
+    }
 }
 
 async function fetchAnalytics() {
@@ -1154,6 +1179,7 @@ startAutoRefresh(parseInt(autoRefreshSelect.value));
 
 // Native dialogs provide focus management, Escape, and keyboard containment.
 let modalChartInstance = null;
+let modalChartKey = null;
 const chartDialog = document.getElementById('chart-modal');
 
 function openChartModal(key, title) {
@@ -1162,6 +1188,7 @@ function openChartModal(key, title) {
     document.getElementById('modal-chart-title').textContent = title;
     document.getElementById('modalChart').setAttribute('aria-label', title);
     chartDialog.showModal();
+    modalChartKey = key;
     // Clone the configuration without discarding the status chart's drill-down handlers.
     const expanded = { ...config, data:{...config.data, datasets:config.data.datasets.map(dataset => ({...dataset}))}, options:{...config.options} };
     modalChartInstance = new Chart(document.getElementById('modalChart'), expanded);
@@ -1173,9 +1200,43 @@ function closeChartModal() {
 
 chartDialog.addEventListener('close', () => {
     if (modalChartInstance) { modalChartInstance.destroy(); modalChartInstance = null; }
+    modalChartKey = null;
 });
 document.getElementById('closeChartModal').addEventListener('click', closeChartModal);
 document.querySelectorAll('[data-chart-key]').forEach(button => {
     button.addEventListener('click', () => openChartModal(button.dataset.chartKey, button.dataset.chartTitle));
 });
+
+// Appearance and refresh preferences share one small settings panel.
+const settingsDialog = document.getElementById('settingsDialog');
+document.getElementById('openSettings').addEventListener('click', () => settingsDialog.showModal());
+
+function syncThemeChoices() {
+    const preference = window.ApacheWatchTheme.getPreference();
+    document.querySelectorAll('[data-theme-choice]').forEach(button => {
+        button.setAttribute('aria-pressed', String(button.dataset.themeChoice === preference));
+    });
+}
+document.querySelectorAll('[data-theme-choice]').forEach(button => {
+    button.addEventListener('click', () => {
+        window.ApacheWatchTheme.setPreference(button.dataset.themeChoice);
+        document.getElementById('settingsSaved').textContent = 'Appearance saved in this browser.';
+    });
+});
+autoRefreshSelect.addEventListener('change', () => {
+    document.getElementById('settingsSaved').textContent = 'Refresh preference saved in this browser.';
+});
+document.addEventListener('apachewatch:themechange', () => {
+    syncThemeChoices();
+    Object.entries(charts).forEach(([key, chart]) => {
+        applyChartTheme(chart.config, key);
+        applyChartTheme(chartConfigs[key], key);
+        chart.update('none');
+    });
+    if (modalChartInstance) {
+        applyChartTheme(modalChartInstance.config, modalChartKey);
+        modalChartInstance.update('none');
+    }
+});
+syncThemeChoices();
 syncViewFromHash();

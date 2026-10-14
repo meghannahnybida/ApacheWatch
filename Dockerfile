@@ -9,5 +9,5 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Expose the web port
 EXPOSE 8080
 
-# Run in development mode with auto-reload
+# Run the web server and background monitoring worker.
 CMD ["python", "apachewatch.py"]

@@ -293,6 +293,16 @@
                 </select>
                 <p id="refreshSettingHelp">Live log updates use the separate Watch live control.</p>
             </div>
+            <section class="email-setting" aria-labelledby="emailSettingTitle">
+                <h3 id="emailSettingTitle">Email notifications</h3>
+                <p id="emailRecipient">Loading recipient…</p>
+                <label class="email-toggle"><input type="checkbox" id="emailNotificationsEnabled" disabled> Email alerts</label>
+                <label for="emailSeverity">Send alerts for</label>
+                <select id="emailSeverity" disabled><option value="critical">Critical findings</option><option value="all">Critical and warning findings</option></select>
+                <p id="emailDeliveryStatus" role="status">Checking sender connection…</p>
+                <button type="button" class="secondary-button" id="sendTestEmail" disabled>Send test email</button>
+                <p id="emailNotificationMessage" role="status" hidden></p>
+            </section>
             <p class="settings-saved" role="status" id="settingsSaved">Preferences save automatically in this browser.</p>
         </div>
     </dialog>

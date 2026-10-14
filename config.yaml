@@ -42,6 +42,22 @@ security:
     - 127.0.0.0/8
     - ::1/128
 
+monitoring:
+  enabled: true
+  interval_seconds: 60
+
+notifications:
+  email:
+    # Email delivery is deferred; enable when a sending service is connected.
+    enabled: false
+    recipients:
+      - meghannahnybida@gmail.com
+    severity: critical
+    # Set the sending service with APACHEWATCH_SMTP_* environment variables.
+    # The recipient above does not have to be the sending account.
+    smtp:
+      security: starttls
+
 web:
   host: "0.0.0.0"  # Use 0.0.0.0 for Docker, or 127.0.0.1 for local-only
   port: 8080

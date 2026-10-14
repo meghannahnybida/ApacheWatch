@@ -11,6 +11,8 @@ import hashlib
 import ipaddress
 import json
 import concurrent.futures
+import argparse
+import threading
 from collections import Counter, defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import psutil
@@ -18,6 +20,10 @@ import yaml
 from datetime import datetime, timedelta
 from pathlib import Path
 from flask import Flask, jsonify, render_template
+from dotenv import load_dotenv
+import notifications
+
+load_dotenv(Path(__file__).with_name(".env"), override=False)
 
 # Import IP analysis module
 try:
@@ -72,6 +78,17 @@ def apply_config_defaults(config_data):
     config_data.setdefault("security", {})
     config_data["security"].setdefault("allowlist", DEFAULT_SECURITY_CONFIG["allowlist"].copy())
     config_data["security"].setdefault("minimum_score", DEFAULT_SECURITY_CONFIG["minimum_score"])
+
+    config_data.setdefault("monitoring", {})
+    config_data["monitoring"].setdefault("enabled", True)
+    config_data["monitoring"].setdefault("interval_seconds", 60)
+    config_data.setdefault("notifications", {})
+    config_data["notifications"].setdefault("email", {})
+    email = config_data["notifications"]["email"]
+    email.setdefault("enabled", False)
+    email.setdefault("recipients", [])
+    email.setdefault("severity", "critical")
+    email.setdefault("smtp", {})
 
     return config_data
 
@@ -933,6 +950,8 @@ def init_database(db_path):
     conn.commit()
     conn.close()
 
+    notifications.init_notification_storage(db_path)
+
 
 ACTION_ITEM_STATUSES = {"new", "acknowledged", "snoozed", "resolved", "dismissed"}
 
@@ -1501,6 +1520,88 @@ def get_traffic_chart_data(db_path, hours=24):
 app = Flask(__name__)
 config = load_config()
 
+
+def run_monitoring_cycle():
+    """Collect history, refresh findings, and deliver email without a page request."""
+    metrics = collect_metrics()
+    access_entries = parse_access_log(config["apache"].get("access_log", ""), max_lines=10000)
+    error_entries = parse_error_log(config["apache"].get("error_log", ""), max_lines=2000)
+    candidates = build_action_candidates(metrics, access_entries, error_entries)
+    add_metrics_snapshot(config["database"], metrics)
+    if config["apache"].get("access_log"):
+        aggregate_access_logs(config["database"], config["apache"]["access_log"])
+    alerts = []
+    for candidate in candidates:
+        if candidate["source"] == "alert":
+            evidence = candidate["evidence"]
+            alerts.append({"severity": candidate["severity"], "message": candidate["summary"], **evidence})
+    save_alerts(config["database"], alerts, config["alerts"].get("cooldown_minutes", 30))
+    sync_action_items(config["database"], candidates)
+    items, _ = get_action_items(config["database"], status="open", limit=500)
+    notifications.queue_alerts(config, items)
+    notifications.record_monitor_check(config)
+    return notifications.deliver_pending(config)
+
+
+class MonitoringWorker:
+    def __init__(self):
+        self.stopped = threading.Event()
+        self.thread = threading.Thread(target=self.run, name="apachewatch-monitor", daemon=True)
+
+    def start(self):
+        self.thread.start()
+
+    def stop(self):
+        self.stopped.set()
+        if self.thread.is_alive():
+            self.thread.join(timeout=2)
+
+    def run(self):
+        try:
+            interval = max(10, min(3600, int(config.get("monitoring", {}).get("interval_seconds", 60))))
+        except (TypeError, ValueError):
+            interval = 60
+        while not self.stopped.is_set():
+            try:
+                run_monitoring_cycle()
+            except Exception:
+                app.logger.exception("Background monitoring check failed")
+                try:
+                    notifications.record_monitor_check(config, "Background check failed. Check server logs.")
+                except Exception:
+                    app.logger.error("Unable to record monitoring status")
+            self.stopped.wait(interval)
+
+
+@app.route("/api/notifications/email", methods=["GET", "PATCH"])
+def api_email_notifications():
+    from flask import request
+
+    if request.method == "PATCH":
+        payload = request.get_json(silent=True)
+        if not isinstance(payload, dict):
+            return jsonify({"error": "a JSON request body is required"}), 400
+        try:
+            notifications.update_preferences(config, payload.get("enabled"), payload.get("severity"))
+        except ValueError as error:
+            return jsonify({"error": str(error)}), 400
+    return jsonify(notifications.public_status(config))
+
+
+@app.route("/api/notifications/email/test", methods=["POST"])
+def api_test_email():
+    from flask import request
+
+    if not request.is_json:
+        return jsonify({"error": "a JSON request body is required"}), 400
+    if not notifications.public_status(config)["monitoring_active"]:
+        return jsonify({"error": "Start the background monitoring worker before sending a test email."}), 409
+    try:
+        job_id = notifications.queue_test(config)
+    except ValueError as error:
+        return jsonify({"error": str(error)}), 400
+    return jsonify({"queued": True, "id": job_id}), 202
+
 @app.route("/")
 def dashboard():
     """Render the dashboard."""
@@ -1743,6 +1844,32 @@ def api_traffic_chart():
 # =============================================================================
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="ApacheWatch web dashboard and monitoring worker")
+    parser.add_argument("--monitor-only", action="store_true", help="Run background monitoring without the web server")
+    parser.add_argument("--test-email", action="store_true", help="Send one test to the configured recipients")
+    parser.add_argument("--debug", action="store_true", help="Enable development reloading")
+    args = parser.parse_args()
+    if args.test_email:
+        try:
+            job_id = notifications.queue_test(config)
+            notifications.deliver_pending(config, limit=1, job_id=job_id)
+            with sqlite3.connect(config["database"]) as conn:
+                status = conn.execute("SELECT status FROM email_outbox WHERE id = ?", (job_id,)).fetchone()[0]
+            if status != "sent":
+                parser.exit(1, "Test email could not be delivered. Check the sender connection.\n")
+            print("Test email delivered to the configured recipients.")
+        except ValueError as error:
+            parser.exit(1, str(error) + "\n")
+        raise SystemExit(0)
+
+    worker = MonitoringWorker()
+    if args.monitor_only:
+        try:
+            worker.run()
+        except KeyboardInterrupt:
+            worker.stopped.set()
+        raise SystemExit(0)
+
     print(f"Starting ApacheWatch...")
     print(f"Server: {config['server_name']}")
     print(f"Dashboard: http://localhost:{config['web']['port']}")
@@ -1764,8 +1891,9 @@ if __name__ == "__main__":
             size_mb = os.path.getsize(path) / (1024 * 1024)
             print(f"  {label}: {path} ({size_mb:.1f} MB) - OK")
 
-    app.run(
-        host=config["web"]["host"],
-        port=config["web"]["port"],
-        debug=True
-    )
+    if config["monitoring"].get("enabled", True) and (not args.debug or os.environ.get("WERKZEUG_RUN_MAIN") == "true"):
+        worker.start()
+    try:
+        app.run(host=config["web"]["host"], port=config["web"]["port"], debug=args.debug)
+    finally:
+        worker.stop()

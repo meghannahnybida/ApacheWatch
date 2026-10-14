@@ -1,8 +1,8 @@
 # ApacheWatch - Docker Development Guide
 
-## Development Mode (with auto-reload)
+## Web Server and Background Monitoring
 
-Your code is mounted into the container, so **any changes you make are instantly reflected** - no rebuild needed!
+Your code is mounted into the container. The default command starts the web server and a background worker that checks findings and sends configured email notifications every minute.
 
 ### Quick Start
 
@@ -24,7 +24,7 @@ volumes:
   - .:/app  # Your code → live updates!
 ```
 
-Flask's debug mode (enabled by default) auto-reloads when you edit Python files.
+For development auto-reloading, change the service command to `python apachewatch.py --debug`. The worker runs in the reload child so development mode does not start duplicate monitoring threads. Otherwise restart the service after Python changes.
 
 ### Making changes
 
@@ -32,7 +32,11 @@ Flask's debug mode (enabled by default) auto-reloads when you edit Python files.
 2. Save the file
 3. Refresh your browser - changes are live!
 
-**No need to rebuild or restart the container.**
+HTML/CSS changes do not need a rebuild. Python changes need a restart unless development reloading is enabled; dependency changes require a rebuild.
+
+### Email Setup
+
+Copy `.env.example` to `.env`, fill in the outgoing email service settings, and rebuild/recreate the service. Compose passes those environment variables to the app. Alert recipients are listed in `config.yaml`; the sending service's credentials are separate. See **Email Notifications** in [README.md](README.md) for setup and testing.
 
 ### Logs Setup
 

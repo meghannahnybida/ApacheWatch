@@ -129,6 +129,14 @@ details[open] > summary > .disclosure-chevron, details[open] > summary > .recomm
 .refresh-setting { display: grid; margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--line); }
 .refresh-setting select { width: 100%; min-height: 38px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; color: var(--ink); background: var(--surface-subtle); font-size: 13px; }
 .settings-body .settings-saved { margin-top: 24px; padding-top: 14px; border-top: 1px solid var(--line); font-size: 11px; }
+.email-setting { display: grid; gap: 8px; margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--line); }
+.email-setting h3 { color: var(--ink); font-size: 13px; font-weight: 650; }
+.email-setting > label { color: var(--ink); font-size: 12px; }
+.email-setting .email-toggle { display: flex; align-items: center; gap: 8px; padding-block: 8px; }
+.email-setting select { min-width: 0; width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; color: var(--ink); background: var(--surface-subtle); font-size: 12px; }
+.settings-body .email-setting p { margin: 0; overflow-wrap: anywhere; }
+.email-setting .secondary-button { justify-self: start; }
+.settings-dialog { overflow-y: auto; }
 input::placeholder, textarea::placeholder { color: var(--muted); opacity: .8; }
 .refresh-controls select, .select-field select { min-height: 34px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); font-size: 12px; }
 .section-heading, .analytics-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 12px; }

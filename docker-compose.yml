@@ -14,10 +14,15 @@ services:
       # Persist data outside container
       - ./data:/app/data
     environment:
-      - FLASK_ENV=development
-      - FLASK_DEBUG=1
+      - APACHEWATCH_SMTP_HOST=${APACHEWATCH_SMTP_HOST:-}
+      - APACHEWATCH_SMTP_PORT=${APACHEWATCH_SMTP_PORT:-587}
+      - APACHEWATCH_SMTP_SECURITY=${APACHEWATCH_SMTP_SECURITY:-starttls}
+      - APACHEWATCH_SMTP_USERNAME=${APACHEWATCH_SMTP_USERNAME:-}
+      - APACHEWATCH_SMTP_PASSWORD=${APACHEWATCH_SMTP_PASSWORD:-}
+      - APACHEWATCH_EMAIL_FROM=${APACHEWATCH_EMAIL_FROM:-}
+      - APACHEWATCH_PUBLIC_URL=${APACHEWATCH_PUBLIC_URL:-}
     restart: unless-stopped
-    # Override CMD to use Flask's auto-reload
+    # Starts the web server and its background monitoring worker.
     command: python apachewatch.py
 
 # For macOS/Windows users who don't have Apache locally:

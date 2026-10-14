@@ -17,7 +17,7 @@ Simple server monitoring and log analysis for Apache servers.
 
 ```bash
 # Install dependencies
-pip install flask psutil pyyaml
+pip install -r requirements.txt
 
 # Edit config.yaml with your Apache log paths
 # Then run:
@@ -90,6 +90,9 @@ web:
 - `PATCH /api/action-items/<id>` - Acknowledge, snooze, resolve, dismiss, or reopen a finding
 - `GET /api/traffic-chart?hours=24` - Traffic chart data (JSON, default 24 hours)
 - `GET /api/alerts` - Recent local alerts saved in SQLite
+- `GET /api/notifications/email` - Email readiness, recipient, delivery status, and background-check status
+- `PATCH /api/notifications/email` - Enable/disable email alerts and select critical-only or critical-and-warning findings
+- `POST /api/notifications/email/test` - Queue a test to the configured recipients (JSON body `{}`; limited to one per minute)
 
 ## Log Permissions
 
@@ -133,7 +136,7 @@ This creates sample Apache logs in the `./logs/` directory.
 
 ### Test Alerts Locally
 
-Alerts are evaluated when the dashboard or `/api/alerts` is requested. To verify alerting with test logs, temporarily lower thresholds in `config.yaml`, for example:
+The background worker evaluates findings every minute, even when the dashboard is closed. Dashboard/API requests can also refresh local alerts. To verify alerting with test logs, temporarily lower thresholds in `config.yaml`, for example:
 
 ```yaml
 alerts:
@@ -142,7 +145,34 @@ alerts:
     client_errors_4xx: 1
 ```
 
-Refresh the dashboard, then check the Recent Alerts panel or open `http://localhost:8080/api/alerts`.
+Check Action Center or open `http://localhost:8080/api/alerts`.
+
+### Email Notifications
+
+Email delivery is deferred for now and disabled in this checkout. The implementation and setup outline below are retained for later. The intended recipient is `meghannahnybida@gmail.com`, configured in `config.yaml` under `notifications.email.recipients`. The sending service is separate from the recipient.
+
+1. Copy `.env.example` to `.env` and fill in your outgoing email service's SMTP host, port, username, password, and sending address. Use `starttls` for a STARTTLS connection or `ssl` for implicit TLS, with the port supplied by your service. `.env` is ignored by Git and loaded by the app; existing deployment environment variables take precedence.
+2. Set `APACHEWATCH_PUBLIC_URL` if recipients should get a link to your deployed dashboard.
+3. Install requirements and restart ApacheWatch. For Docker, rebuild and recreate the service with `docker compose up -d --build --force-recreate`.
+4. Open **Settings → Email notifications**, enable alerts, and choose **Send test email** after the sender is connected and background checks are running. The UI distinguishes a queued test from a successfully sent test.
+
+Critical findings are emailed by default. Settings can also include warnings or turn email off; these preferences are stored for this server. Repeated emails use the alert cooldown (30 minutes by default, with a five-minute minimum for email). Snoozed, dismissed, resolved, and no-longer-observed findings do not generate email. Failed deliveries use a durable queue with up to five attempts and increasing delays. Delivery status means the SMTP service accepted the message; inbox placement depends on the email service.
+
+`python apachewatch.py` starts both the web server and monitoring worker. The worker records metrics, refreshes traffic history and Action Center, and sends queued email without requiring an open browser. Development reloading is available with `python apachewatch.py --debug`; the reload parent does not run a second worker.
+
+For a WSGI deployment that imports the Flask app, run one separate monitoring process alongside it:
+
+```bash
+python apachewatch.py --monitor-only
+```
+
+A command-line delivery check is also available:
+
+```bash
+python apachewatch.py --test-email
+```
+
+Keep the web service and monitoring process on the same configuration, database, and sending-service environment. No email is queued or sent until delivery is configured.
 
 ## Features
 
@@ -156,6 +186,7 @@ Refresh the dashboard, then check the Recent Alerts panel or open `http://localh
   - Tracks bot vs human traffic percentages
 - **Historical Data**: Track metrics over time with SQLite storage
 - **Local Alerts**: Save threshold-based alerts to SQLite and expose them through the dashboard/API
+- **Email Notifications**: Background finding checks, severity preferences, durable retries, and delivery status in Settings
 - **Action Center**: Track alerts, recurring errors, and traffic threats through acknowledgement, snooze, resolution, and dismissal
 - **Web Dashboard**: Clean, responsive interface for all metrics
 - **Docker Ready**: Full containerization support for easy deployment

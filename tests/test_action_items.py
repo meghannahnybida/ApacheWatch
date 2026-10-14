@@ -5,10 +5,9 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch
 
-from apachewatch import (
-    app,
+from apachewatch import app, config
+from apachewatch_app.actions import (
     build_action_candidates,
-    config,
     get_action_items,
     sync_action_items,
     update_action_item,
@@ -42,7 +41,7 @@ class ActionItemStorageTests(unittest.TestCase):
             {"timestamp": "2026-09-20T12:02:00", "level": "error", "message": "one-off failure"},
         ]
 
-        items = build_action_candidates(metrics=metrics, access_entries=[], error_entries=errors)
+        items = build_action_candidates(config, metrics=metrics, access_entries=[], error_entries=errors)
         error_items = [item for item in items if item["source"] == "error"]
 
         self.assertEqual(len(error_items), 1)
@@ -116,7 +115,7 @@ class ActionItemApiTests(unittest.TestCase):
             previous_database = config["database"]
             config["database"] = str(Path(directory) / "actions.db")
             try:
-                with patch("apachewatch.build_action_candidates", return_value=[candidate()]):
+                with patch("apachewatch_app.routes.build_action_candidates", return_value=[candidate()]):
                     response = app.test_client().get("/api/action-items?status=all")
                     item_id = response.get_json()["items"][0]["id"]
                     update_response = app.test_client().patch(

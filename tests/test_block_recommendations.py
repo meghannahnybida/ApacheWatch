@@ -1,6 +1,7 @@
 import unittest
 
-from apachewatch import analyze_block_recommendations, app
+from apachewatch import app
+from apachewatch_app.traffic import analyze_block_recommendations
 
 
 def access_entry(ip, minute, path="/", status=200, user_agent="Mozilla/5.0"):

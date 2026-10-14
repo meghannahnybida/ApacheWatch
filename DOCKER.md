@@ -28,7 +28,7 @@ For development auto-reloading, change the service command to `python apachewatc
 
 ### Making changes
 
-1. Edit `apachewatch.py` or `templates/dashboard.html` on your local machine
+1. Edit Python modules in `apachewatch_app/` or `templates/dashboard.html` on your local machine
 2. Save the file
 3. Refresh your browser - changes are live!
 
@@ -82,7 +82,10 @@ docker compose exec apachewatch python -c "import psutil; print(psutil.cpu_perce
 
 ```
 ApacheWatch/
-├── apachewatch.py        # Your Python code (auto-reloads)
+├── apachewatch.py        # Startup command and WSGI app
+├── apachewatch_app/      # Python modules (auto-reload with --debug)
+├── notifications.py     # Email delivery
+├── ip_analyzer.py       # IP and bot identification
 ├── templates/
 │   └── dashboard.html    # Your HTML (edit anytime)
 ├── config.yaml           # Configuration

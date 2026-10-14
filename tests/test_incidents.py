@@ -1,6 +1,7 @@
 import unittest
 
-from apachewatch import app, group_error_incidents
+from apachewatch import app
+from apachewatch_app.logs import group_error_incidents
 
 
 class IncidentGroupingTests(unittest.TestCase):

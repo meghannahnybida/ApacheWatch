@@ -107,7 +107,22 @@ sudo usermod -a -G adm $USER
 
 ```
 ApacheWatch/
-├── apachewatch.py      # Main application
+├── apachewatch.py      # Startup command and WSGI app
+├── apachewatch_app/    # Python modules grouped by responsibility
+│   ├── application.py  # Flask app factory and UI asset paths
+│   ├── configuration.py # Configuration loading and defaults
+│   ├── routes.py       # Dashboard and HTTP API
+│   ├── cli.py          # Web, worker, and test-email startup
+│   ├── monitoring.py   # Background checks
+│   ├── metrics.py      # System metrics and source health
+│   ├── logs.py         # Log parsing and error grouping
+│   ├── traffic.py      # Traffic analytics and security findings
+│   ├── alerts.py       # Threshold rules
+│   ├── actions.py      # Action Center findings and workflow
+│   ├── database.py     # SQLite schema
+│   └── history.py      # Alert, metric, and traffic history
+├── notifications.py    # Deferred email delivery feature
+├── ip_analyzer.py      # IP and bot identification
 ├── config.yaml         # Configuration file
 ├── requirements.txt    # Python dependencies
 ├── generate_logs.py    # Test log generator
@@ -123,6 +138,10 @@ ApacheWatch/
 ```
 
 ## Development
+
+Start the app with `python apachewatch.py`, or use `apachewatch:app` as the WSGI entry point. Importing the app does not start monitoring. Routes read each app's settings from `app.config["APACHEWATCH"]`; collectors and finding builders receive configuration explicitly. `apachewatch_app.create_app(config_data=...)` creates an isolated app for tests or other deployments.
+
+Run the test suite with `python -m unittest discover -s tests -v`.
 
 ### Generate Test Logs
 

@@ -2,7 +2,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from apachewatch import app, collect_monitoring_health
+from apachewatch import app
+from apachewatch_app.metrics import collect_monitoring_health
 
 
 class MonitoringHealthTests(unittest.TestCase):

@@ -57,7 +57,7 @@ class LogTailApiTests(unittest.TestCase):
         self.assertEqual(self.client.get('/api/log-tail').status_code, 404)
         with patch.dict(config['apache'], error_log=''):
             self.assertEqual(self.client.get('/api/log-tail').status_code, 503)
-        with patch('apachewatch._tail_file', side_effect=PermissionError):
+        with patch('apachewatch_app.routes._tail_file', side_effect=PermissionError):
             response = self.client.get('/api/log-tail')
             self.assertEqual(response.status_code, 403)
             self.assertIn('permissions', response.get_json()['error'])

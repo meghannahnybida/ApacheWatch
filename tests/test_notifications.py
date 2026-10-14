@@ -11,10 +11,11 @@ from pathlib import Path
 from unittest.mock import patch
 
 import notifications
-from apachewatch import (
-    MonitoringWorker, app, apply_config_defaults, config, get_action_items,
-    init_database, run_monitoring_cycle, sync_action_items, update_action_item,
-)
+from apachewatch import app, config
+from apachewatch_app.actions import get_action_items, sync_action_items, update_action_item
+from apachewatch_app.configuration import apply_config_defaults
+from apachewatch_app.database import init_database
+from apachewatch_app.monitoring import MonitoringWorker, run_monitoring_cycle
 
 
 def finding(key="disk", severity="critical"):
@@ -220,8 +221,8 @@ class EmailNotificationTests(unittest.TestCase):
             "memory":{"percent":30, "used_gb":3, "total_gb":10},
             "disk":{"percent":92, "used_gb":92, "total_gb":100},
         }
-        with patch.dict(config, self.settings, clear=True), patch('apachewatch.collect_metrics', return_value=metrics), patch('notifications.send_email') as send:
-            result = run_monitoring_cycle()
+        with patch('apachewatch_app.monitoring.collect_metrics', return_value=metrics), patch('notifications.send_email') as send:
+            result = run_monitoring_cycle(self.settings)
             self.assertEqual(result["sent"], 1)
             send.assert_called_once()
             with sqlite3.connect(self.settings["database"]) as conn:
@@ -230,8 +231,8 @@ class EmailNotificationTests(unittest.TestCase):
             self.assertTrue(notifications.public_status(self.settings)["monitoring_active"])
 
     def test_worker_continues_after_a_failed_cycle(self):
-        worker = MonitoringWorker()
-        with patch('apachewatch.run_monitoring_cycle', side_effect=[RuntimeError('test'), {}]) as cycle, patch('notifications.record_monitor_check') as record, patch.object(app.logger, 'exception'):
+        worker = MonitoringWorker(self.settings, logger=app.logger)
+        with patch('apachewatch_app.monitoring.run_monitoring_cycle', side_effect=[RuntimeError('test'), {}]) as cycle, patch('notifications.record_monitor_check') as record, patch.object(app.logger, 'exception'):
             with patch.object(worker.stopped, 'wait', side_effect=[False, True]):
                 with patch.object(worker.stopped, 'is_set', side_effect=[False, False, True]):
                     worker.run()

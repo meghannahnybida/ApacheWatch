@@ -7,6 +7,8 @@ import unittest
 from unittest.mock import patch
 
 import yaml
+from flask import render_template
+from jinja2 import FileSystemLoader
 
 from apachewatch_app import create_app
 from apachewatch_app.cli import main
@@ -84,6 +86,33 @@ class ApplicationTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertFalse((self.directory / 'data').exists())
+
+    def test_template_and_asset_edits_are_visible_without_restarting(self):
+        app = create_app(self.settings)
+        app.jinja_loader = FileSystemLoader(self.directory)
+        app.static_folder = str(self.directory / 'static')
+        asset = Path(app.static_folder) / 'dashboard.js'
+        asset.parent.mkdir()
+        asset.write_text('first script')
+        template = self.directory / 'dashboard.html'
+        template.write_text('First page {{ asset_url("dashboard.js") }}')
+        with app.test_request_context('/'):
+            first = render_template('dashboard.html')
+
+        template.write_text('Updated page {{ asset_url("dashboard.js") }}')
+        asset.write_text('updated script')
+        for path in (template, asset):
+            modified = path.stat().st_mtime + 2
+            os.utime(path, (modified, modified))
+        with app.test_request_context('/'):
+            updated = render_template('dashboard.html')
+
+        self.assertTrue(first.startswith('First page '))
+        self.assertTrue(updated.startswith('Updated page '))
+        self.assertNotEqual(first.split()[-1], updated.split()[-1])
+        response = app.test_client().get(updated.split()[-1])
+        self.assertEqual(response.data, b'updated script')
+        response.close()
 
     def test_web_failure_stops_the_monitoring_worker(self):
         app = create_app(self.settings)

@@ -364,6 +364,9 @@ h2 { color: var(--ink); font-size: 16px; font-weight: 650; letter-spacing: -.015
 .action-overview-summary span { color: var(--muted); font-size: 11px; }
 .action-loading { color: var(--muted); font-size: 12px; }
 .action-overview-list { padding: 0 12px; }
+.action-overview-footer { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; padding: 14px 20px; border-top: 1px solid var(--line); background: var(--surface-subtle); border-radius: 0 0 10px 10px; }
+.action-overview-footer > span { color: var(--muted); font-size: 11px; }
+.action-overview-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
 
 .action-center { padding: 22px; }
 .action-center-header {
@@ -468,8 +471,10 @@ h2 { color: var(--ink); font-size: 16px; font-weight: 650; letter-spacing: -.015
 .action-info .action-severity-dot { background: #6c88bf; box-shadow: 0 0 0 4px rgba(108,136,191,.1); }
 .action-item-time { color: var(--muted); font-size: 11px; white-space: nowrap; }
 .action-item-arrow { color: var(--muted); }
-.action-item-compact { padding-inline: 7px; }
-.action-item-compact:nth-child(n+5) { display: none; }
+.action-item-compact { grid-template-columns: 8px minmax(0, 1fr) 18px; padding: 16px 7px; }
+.action-item-compact .action-item-heading { justify-content: space-between; }
+.action-item-compact .action-item-heading strong { white-space: normal; overflow-wrap: anywhere; }
+.action-item-compact .action-item-summary { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; white-space: normal; overflow-wrap: anywhere; }
 
 .action-status {
     display: inline-flex;
@@ -674,6 +679,9 @@ h2 { color: var(--ink); font-size: 16px; font-weight: 650; letter-spacing: -.015
     .action-item-meta { font-size: 11px; line-height: 1.5; }
     .action-list-heading { flex-wrap: wrap; }
     .action-overview-summary { align-items: flex-start; flex-direction: column; gap: 4px; }
+    .action-overview-summary, .action-overview-footer { padding-inline: 16px; }
+    .action-overview-footer { align-items: flex-start; flex-direction: column; }
+    .action-overview-controls { justify-content: space-between; width: 100%; gap: 8px; }
     .analytics-toolbar { align-items: flex-start; flex-direction: column; gap: 10px; }
     .analytics-layout { grid-template-columns: 1fr; gap: 12px; }
     .chart-card, .list-card { padding: 16px; }

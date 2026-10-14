@@ -431,6 +431,8 @@ let currentActionItems = [];
 let currentActionSummary = {};
 let currentActionFilter = 'open';
 let selectedActionItem = null;
+let overviewExpanded = false;
+const overviewPreviewLimit = 4;
 const actionSearch = document.getElementById('actionSearch');
 const actionSourceFilter = document.getElementById('actionSourceFilter');
 
@@ -463,14 +465,17 @@ function renderActionRow(item, compact = false) {
     const observed = item.currently_observed
         ? '<span class="action-observed">Observed now</span>'
         : '<span class="action-not-observed">Not in latest scan</span>';
+    const meta = compact
+        ? `<span class="action-priority">${escapeHtml(item.severity)}</span> · ${escapeHtml(actionSourceLabel(item.source))}${item.currently_observed ? '' : ` · ${observed}`}`
+        : `<span class="action-priority">${escapeHtml(item.severity)}</span> · ${escapeHtml(actionSourceLabel(item.source))} · ${item.occurrence_count} occurrence${item.occurrence_count === 1 ? '' : 's'} · ${observed}`;
     return `<button type="button" class="action-item action-${item.severity} ${compact ? 'action-item-compact' : ''}" data-action-item-id="${item.id}">
         <span class="action-severity-dot" aria-hidden="true"></span>
         <span class="action-item-content">
             <span class="action-item-heading"><strong>${escapeHtml(item.title)}</strong><span class="action-status action-status-${item.status}">${escapeHtml(actionStatusLabel(item.status))}</span></span>
             <span class="action-item-summary">${escapeHtml(item.summary)}</span>
-            <span class="action-item-meta"><span class="action-priority">${escapeHtml(item.severity)}</span> · ${escapeHtml(actionSourceLabel(item.source))} · ${item.occurrence_count} occurrence${item.occurrence_count === 1 ? '' : 's'} · ${observed}</span>
+            <span class="action-item-meta">${meta}</span>
         </span>
-        <span class="action-item-time">${formatIncidentTime(item.last_seen)}</span>
+        ${compact ? '' : `<span class="action-item-time">${formatIncidentTime(item.last_seen)}</span>`}
         <span class="action-item-arrow">→</span>
     </button>`;
 }
@@ -495,18 +500,51 @@ function renderActionCenter() {
     navCount.hidden = !(summary.open > 0);
 
     const openItems = sortActionItems(currentActionItems.filter(isOpenAction));
+    renderActionOverview(openItems, summary.open || 0);
+    renderActionList();
+}
+
+function renderActionOverview(openItems, total) {
+    if (openItems.length <= overviewPreviewLimit) overviewExpanded = false;
+    const visibleItems = overviewExpanded ? openItems : openItems.slice(0, overviewPreviewLimit);
     const criticalCount = openItems.filter(item => item.severity === 'critical').length;
-    document.getElementById('actionOverviewSummary').innerHTML = summary.open
-        ? `<strong>${summary.open} open finding${summary.open === 1 ? '' : 's'}</strong><span>${criticalCount ? `${criticalCount} critical · ` : ''}${summary.new || 0} new</span>`
+    const warningCount = openItems.filter(item => item.severity === 'warning').length;
+    const details = openItems.length === total
+        ? [criticalCount ? `${criticalCount} critical` : '', warningCount ? `${warningCount} warning` : ''].filter(Boolean).join(' · ')
+        : `${currentActionSummary.new || 0} new · ${currentActionSummary.acknowledged || 0} in progress`;
+    document.getElementById('actionOverviewSummary').innerHTML = total
+        ? `<strong>${total} open finding${total === 1 ? '' : 's'}</strong><span>${details}</span>`
         : '<strong>All clear</strong><span>No findings need attention.</span>';
     const overviewList = document.getElementById('actionOverviewList');
     overviewList.innerHTML = openItems.length
-        ? openItems.slice(0, 4).map(item => renderActionRow(item, true)).join('')
-        : '<div class="action-empty action-empty-compact">Nothing is waiting for review.</div>';
+        ? visibleItems.map(item => renderActionRow(item, true)).join('')
+        : total
+            ? '<div class="action-empty action-empty-compact">Open Action Center to review these findings.</div>'
+            : '<div class="action-empty action-empty-compact">Nothing is waiting for review.</div>';
     bindActionRows(overviewList);
-
-    renderActionList();
+    document.getElementById('actionOverviewFooter').hidden = false;
+    document.getElementById('actionOverviewCount').textContent = total
+        ? `Showing ${visibleItems.length} of ${total} · Highest priority first`
+        : 'Review snoozed and completed findings in Action Center.';
+    const toggle = document.getElementById('toggleOverviewFindings');
+    toggle.hidden = openItems.length <= overviewPreviewLimit;
+    toggle.setAttribute('aria-expanded', String(overviewExpanded));
+    toggle.textContent = overviewExpanded ? 'Show fewer' : `Show ${openItems.length - visibleItems.length} more`;
+    document.getElementById('viewAllFindings').textContent = total
+        ? `View all ${total} in Action Center →`
+        : 'Open Action Center →';
 }
+
+document.getElementById('toggleOverviewFindings').addEventListener('click', () => {
+    overviewExpanded = !overviewExpanded;
+    renderActionOverview(sortActionItems(currentActionItems.filter(isOpenAction)), currentActionSummary.open || 0);
+});
+
+document.getElementById('viewAllFindings').addEventListener('click', () => {
+    actionSearch.value = '';
+    actionSourceFilter.value = 'all';
+    document.querySelector('[data-action-filter="open"]').click();
+});
 
 function renderActionList() {
     let filtered = currentActionItems.filter(item => {
@@ -559,6 +597,8 @@ function fetchActionItems() {
         })
         .catch(error => {
             console.error('Error fetching action items:', error);
+            document.getElementById('actionOverviewSummary').innerHTML = '<strong>Findings unavailable</strong><span>Refresh to try again.</span>';
+            document.getElementById('actionOverviewFooter').hidden = true;
             document.getElementById('actionItems').innerHTML = '<div class="action-empty action-error">Unable to refresh findings.</div>';
             document.getElementById('actionOverviewList').innerHTML = '<div class="action-empty action-empty-compact">Unable to refresh findings.</div>';
         })

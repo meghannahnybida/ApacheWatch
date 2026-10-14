@@ -4,8 +4,8 @@
     <meta charset="utf-8">
     <title>ApacheWatch</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <script src="{{ url_for('static', filename='js/theme.js') }}"></script>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <script src="{{ asset_url('js/theme.js') }}"></script>
+    <link rel="stylesheet" href="{{ asset_url('css/style.css') }}">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" defer></script>
 </head>
 <body>
@@ -78,7 +78,6 @@
 
                 <div class="section-heading compact-heading">
                     <h2>Needs attention</h2>
-                    <a href="#actions" class="text-link">Open Action Center →</a>
                 </div>
                 <div class="action-overview-panel">
                     <div class="action-overview-summary" id="actionOverviewSummary">
@@ -89,6 +88,13 @@
                         <button type="button" class="text-button" id="openLogDetails">View details</button>
                     </div>
                     <div class="action-overview-list" id="actionOverviewList"></div>
+                    <div class="action-overview-footer" id="actionOverviewFooter" hidden>
+                        <span id="actionOverviewCount" aria-live="polite"></span>
+                        <div class="action-overview-controls">
+                            <button type="button" class="secondary-button" id="toggleOverviewFindings" aria-expanded="false" aria-controls="actionOverviewList" hidden></button>
+                            <a href="#actions" class="text-link" id="viewAllFindings">Open Action Center →</a>
+                        </div>
+                    </div>
                 </div>
             </section>
 
@@ -319,6 +325,6 @@
         </div>
         <div class="chart-modal-body"><canvas id="modalChart" role="img" aria-label="Expanded traffic chart"></canvas></div>
     </dialog>
-    <script src="{{ url_for('static', filename='js/dashboard.js') }}" defer></script>
+    <script src="{{ asset_url('js/dashboard.js') }}" defer></script>
 </body>
 </html>

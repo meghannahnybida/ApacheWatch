@@ -232,6 +232,19 @@ def get_action_items(db_path, status="open", limit=100):
     return items, summary
 
 
+def update_action_note(db_path, item_id, note):
+    """Save a note without changing workflow state or a scheduled review time."""
+    if not isinstance(note, str) or len(note) > 2000:
+        raise ValueError("note must be text of at most 2000 characters")
+    init_database(db_path)
+    with sqlite3.connect(db_path) as conn:
+        cursor = conn.execute(
+            "UPDATE action_items SET note = ?, updated_at = ? WHERE id = ?",
+            (note, datetime.now().isoformat(), item_id),
+        )
+        return bool(cursor.rowcount)
+
+
 def update_action_item(db_path, item_id, status, note=None, snooze_minutes=60):
     """Apply a workflow decision to one action item."""
     if status not in ACTION_ITEM_STATUSES:

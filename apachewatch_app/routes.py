@@ -7,6 +7,7 @@ import notifications
 
 from .actions import (
     build_action_candidates, get_action_items, sync_action_items, update_action_item,
+    update_action_note,
 )
 from .alerts import evaluate_and_save_current_alerts
 from .history import (
@@ -250,27 +251,33 @@ def api_action_items():
 
 @web.route("/api/action-items/<int:item_id>", methods=["PATCH"])
 def api_update_action_item(item_id):
-    """Acknowledge, snooze, resolve, dismiss, or reopen a finding."""
+    """Save a note independently or update a finding's workflow state."""
     config = current_app.config["APACHEWATCH"]
     payload = request.get_json(silent=True)
     if not isinstance(payload, dict):
         return jsonify({"error": "a JSON request body is required"}), 400
     status = payload.get("status")
-    if not status:
-        return jsonify({"error": "status is required"}), 400
+    if "status" not in payload and "note" not in payload:
+        return jsonify({"error": "status or note is required"}), 400
     try:
-        changed = update_action_item(
-            config["database"],
-            item_id,
-            status,
-            note=payload.get("note"),
-            snooze_minutes=payload.get("snooze_minutes", 60),
-        )
+        if "status" in payload:
+            changed = update_action_item(
+                config["database"],
+                item_id,
+                status,
+                note=payload.get("note"),
+                snooze_minutes=payload.get("snooze_minutes", 60),
+            )
+        else:
+            changed = update_action_note(config["database"], item_id, payload["note"])
     except ValueError as error:
         return jsonify({"error": str(error)}), 400
     if not changed:
         return jsonify({"error": "action item not found"}), 404
-    return jsonify({"ok": True, "id": item_id, "status": status})
+    result = {"ok": True, "id": item_id}
+    if "status" in payload:
+        result["status"] = status
+    return jsonify(result)
 
 
 @web.route("/api/traffic-chart")

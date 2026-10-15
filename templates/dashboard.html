@@ -111,7 +111,7 @@
                             <span>Needs attention <b id="actionOpenCount">—</b></span><small>New and in progress</small>
                         </button>
                         <button type="button" class="action-queue" data-action-filter="snoozed" aria-pressed="false">
-                            <span>Snoozed <b id="actionSnoozedCount">—</b></span><small>Set aside until later</small>
+                            <span>Later <b id="actionSnoozedCount">—</b></span><small>Returns automatically</small>
                         </button>
                         <button type="button" class="action-queue" data-action-filter="history" aria-pressed="false">
                             <span>History <b id="actionHistoryCount">—</b></span><small>Resolved and dismissed</small>
@@ -238,35 +238,70 @@
     <dialog class="action-dialog" id="actionDialog" aria-labelledby="actionDialogTitle">
         <form method="dialog" class="action-dialog-shell">
             <div class="action-dialog-header">
-                <div>
-                    <span class="action-source" id="actionDialogSource"></span>
-                    <h2 id="actionDialogTitle">Finding details</h2>
+                <div class="action-dialog-identity">
+                    <span class="action-dialog-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v6m0 4h.01"/></svg></span>
+                    <div>
+                        <span class="action-source" id="actionDialogSource"></span>
+                        <h2 id="actionDialogTitle">Finding details</h2>
+                    </div>
                 </div>
                 <button class="action-dialog-close" value="cancel" aria-label="Close">×</button>
             </div>
             <div class="action-dialog-body">
-                <div class="action-dialog-meta" id="actionDialogMeta"></div>
-                <p class="action-dialog-summary" id="actionDialogSummary"></p>
-                <section class="action-evidence-section">
-                    <h3 id="actionEvidenceTitle">Evidence</h3>
-                    <div id="actionDialogEvidence"></div>
-                </section>
-                <label class="action-note-field" for="actionNote">
-                    <span>Operator note</span>
-                    <textarea id="actionNote" rows="3" maxlength="2000" placeholder="Add context for the next person reviewing this finding"></textarea>
-                </label>
+                <div class="action-dialog-context">
+                    <div class="action-dialog-meta" id="actionDialogMeta"></div>
+                    <p class="action-dialog-summary" id="actionDialogSummary"></p>
+                </div>
+                <div class="action-detail-layout">
+                    <section class="action-evidence-section" aria-labelledby="actionEvidenceTitle">
+                        <h3 id="actionEvidenceTitle">Evidence</h3>
+                        <div id="actionDialogEvidence"></div>
+                    </section>
+                    <section class="action-notes-section" aria-label="Finding note">
+                        <label class="action-note-field" for="actionNote">
+                            <span>Note</span>
+                            <textarea id="actionNote" rows="4" maxlength="2000" aria-describedby="actionNoteStatus" placeholder="What have you checked? What should happen next?"></textarea>
+                        </label>
+                        <div class="action-note-save">
+                            <span id="actionNoteStatus" role="status" aria-live="polite">Notes save automatically.</span>
+                            <button type="button" class="secondary-button" id="saveActionNote" hidden disabled>Retry save</button>
+                        </div>
+                    </section>
+                    <p class="action-review-status" id="actionReviewStatus" hidden></p>
+                    <section class="action-review-later" id="actionReviewLater" aria-labelledby="actionReviewLaterTitle">
+                        <div class="action-review-description">
+                            <div class="action-review-heading">
+                                <h3 id="actionReviewLaterTitle">Review later</h3>
+                                <details class="action-review-help" id="actionReviewHelp">
+                                    <summary aria-label="About Review later"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v6m0-10h.01"/></svg></summary>
+                                    <div class="action-review-help-content" id="actionReviewLaterHelp">
+                                        <p>Moves to <strong>Later</strong>.</p>
+                                        <p>Returns to <strong>Needs attention</strong> when the time ends.</p>
+                                    </div>
+                                </details>
+                            </div>
+                        </div>
+                        <div class="action-review-controls">
+                            <label for="actionReviewDelay">Return after
+                                <select id="actionReviewDelay" aria-describedby="actionReviewLaterHelp">
+                                    <option value="15">15 minutes</option>
+                                    <option value="60" selected>1 hour</option>
+                                    <option value="240">4 hours</option>
+                                    <option value="1440">1 day</option>
+                                </select>
+                            </label>
+                            <button type="button" class="secondary-button" data-action-status="snoozed">Move to Later</button>
+                        </div>
+                    </section>
+                </div>
                 <p class="action-error" id="actionUpdateError" role="alert" hidden></p>
             </div>
             <div class="action-dialog-footer">
-                <button type="button" class="text-button" id="actionRelatedButton">View related activity</button>
+                <div class="action-dialog-secondary-actions">
+                    <button type="button" class="text-button" id="actionRelatedButton">View related activity</button>
+                    <button type="button" class="text-button" data-action-status="dismissed">Dismiss</button>
+                </div>
                 <div class="action-dialog-controls">
-                    <details class="action-more-options" id="actionMoreOptions">
-                        <summary>More options</summary>
-                        <div>
-                            <button type="button" class="secondary-button" data-action-status="snoozed">Snooze for 1 hour</button>
-                            <button type="button" class="secondary-button" data-action-status="dismissed">Dismiss finding</button>
-                        </div>
-                    </details>
                     <button type="button" class="primary-button" data-action-status="acknowledged">Mark in progress</button>
                     <button type="button" class="primary-button" data-action-status="new" hidden>Reopen finding</button>
                     <button type="button" class="primary-button" data-action-status="resolved">Mark resolved</button>
@@ -325,6 +360,7 @@
         </div>
         <div class="chart-modal-body"><canvas id="modalChart" role="img" aria-label="Expanded traffic chart"></canvas></div>
     </dialog>
+    <script src="{{ asset_url('js/action-notes.js') }}" defer></script>
     <script src="{{ asset_url('js/dashboard.js') }}" defer></script>
 </body>
 </html>

@@ -87,7 +87,7 @@ web:
 - `GET /api/log-tail?source=error&limit=100` - Original recent error or access log lines in file order (up to 1,000 lines)
 - `GET /api/block-recommendations` - Advisory IP/range recommendations with evidence and proposed Apache/UFW rules
 - `GET /api/action-items?status=open` - Unified alert, recurring-error, and traffic-threat inbox
-- `PATCH /api/action-items/<id>` - Acknowledge, snooze, resolve, dismiss, or reopen a finding
+- `PATCH /api/action-items/<id>` - Save a note, acknowledge, snooze, resolve, dismiss, or reopen a finding
 - `GET /api/traffic-chart?hours=24` - Traffic chart data (JSON, default 24 hours)
 - `GET /api/alerts` - Recent local alerts saved in SQLite
 - `GET /api/notifications/email` - Email readiness, recipient, delivery status, and background-check status
@@ -142,6 +142,10 @@ ApacheWatch/
 Start the app with `python apachewatch.py`, or use `apachewatch:app` as the WSGI entry point. Importing the app does not start monitoring. Routes read each app's settings from `app.config["APACHEWATCH"]`; collectors and finding builders receive configuration explicitly. `apachewatch_app.create_app(config_data=...)` creates an isolated app for tests or other deployments.
 
 Run the test suite with `python -m unittest discover -s tests -v`.
+
+In Action Center, **Review later** moves a finding out of Needs attention for 15 minutes, 1 hour, 4 hours, or 1 day. The Later queue shows when it will return; **Review now** brings it back sooner. Use **Mark in progress** while investigating and **Mark resolved** after addressing the issue.
+
+Finding notes save automatically as you type and when you close the dialog. The note field shows **Saved** after the server confirms the update. **Retry save** appears only if a save fails. Unsaved drafts are retained in the same browser so you can recover them after a refresh. Saving a note preserves the finding's status and scheduled review time.
 
 ### Generate Test Logs
 

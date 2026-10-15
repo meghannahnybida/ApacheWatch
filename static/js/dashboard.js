@@ -435,6 +435,27 @@ let overviewExpanded = false;
 const overviewPreviewLimit = 4;
 const actionSearch = document.getElementById('actionSearch');
 const actionSourceFilter = document.getElementById('actionSourceFilter');
+const reviewHelp = document.getElementById('actionReviewHelp');
+document.addEventListener('click', event => {
+    if (reviewHelp.open && !reviewHelp.contains(event.target)) reviewHelp.open = false;
+});
+document.getElementById('actionDialog').addEventListener('cancel', event => {
+    if (!reviewHelp.open) return;
+    event.preventDefault();
+    reviewHelp.open = false;
+    reviewHelp.querySelector('summary').focus();
+});
+const actionNotes = new window.ApacheWatchNotes({
+    field: document.getElementById('actionNote'),
+    status: document.getElementById('actionNoteStatus'),
+    button: document.getElementById('saveActionNote'),
+    dialog: document.getElementById('actionDialog'),
+    onSaved(id, note) {
+        const item = currentActionItems.find(candidate => candidate.id === id);
+        if (item) item.note = note;
+        if (selectedActionItem?.id === id) selectedActionItem.note = note;
+    }
+});
 
 function sortActionItems(items, historical = false) {
     const priorities = { critical: 0, warning: 1, info: 2 };
@@ -448,7 +469,7 @@ function sortActionItems(items, historical = false) {
 
 function actionStatusLabel(status) {
     return {
-        new: 'New', acknowledged: 'In progress', snoozed: 'Snoozed',
+        new: 'New', acknowledged: 'In progress', snoozed: 'Later',
         resolved: 'Resolved', dismissed: 'Dismissed'
     }[status] || status;
 }
@@ -465,6 +486,9 @@ function renderActionRow(item, compact = false) {
     const observed = item.currently_observed
         ? '<span class="action-observed">Observed now</span>'
         : '<span class="action-not-observed">Not in latest scan</span>';
+    const reviewTime = item.status === 'snoozed' && item.snoozed_until
+        ? `<span class="action-review-time">Returns ${escapeHtml(formatIncidentTime(item.snoozed_until))}</span>`
+        : '';
     const meta = compact
         ? `<span class="action-priority">${escapeHtml(item.severity)}</span> · ${escapeHtml(actionSourceLabel(item.source))}${item.currently_observed ? '' : ` · ${observed}`}`
         : `<span class="action-priority">${escapeHtml(item.severity)}</span> · ${escapeHtml(actionSourceLabel(item.source))} · ${item.occurrence_count} occurrence${item.occurrence_count === 1 ? '' : 's'} · ${observed}`;
@@ -474,6 +498,7 @@ function renderActionRow(item, compact = false) {
             <span class="action-item-heading"><strong>${escapeHtml(item.title)}</strong><span class="action-status action-status-${item.status}">${escapeHtml(actionStatusLabel(item.status))}</span></span>
             <span class="action-item-summary">${escapeHtml(item.summary)}</span>
             <span class="action-item-meta">${meta}</span>
+            ${reviewTime}
         </span>
         ${compact ? '' : `<span class="action-item-time">${formatIncidentTime(item.last_seen)}</span>`}
         <span class="action-item-arrow">→</span>
@@ -525,7 +550,7 @@ function renderActionOverview(openItems, total) {
     document.getElementById('actionOverviewFooter').hidden = false;
     document.getElementById('actionOverviewCount').textContent = total
         ? `Showing ${visibleItems.length} of ${total} · Highest priority first`
-        : 'Review snoozed and completed findings in Action Center.';
+        : 'Review findings set aside for later and completed findings in Action Center.';
     const toggle = document.getElementById('toggleOverviewFindings');
     toggle.hidden = openItems.length <= overviewPreviewLimit;
     toggle.setAttribute('aria-expanded', String(overviewExpanded));
@@ -568,7 +593,7 @@ function renderActionList() {
     document.getElementById('actionQueueHint').textContent = currentActionFilter === 'history' ? 'Most recently updated first' : 'Highest priority first';
     const emptyMessages = {
         open: ['All clear', 'No findings need attention right now.'],
-        snoozed: ['Nothing snoozed', 'Snoozed findings return to Needs attention when their timer expires.'],
+        snoozed: ['Nothing set aside for later', 'Use Review later on a finding to set a time to revisit it. It returns to Needs attention automatically.'],
         history: ['No history yet', 'Resolved and dismissed findings will appear here.']
     };
     const [emptyTitle, emptyDescription] = hasFilters
@@ -611,9 +636,10 @@ function fetchActionItems() {
 function renderActionEvidence(item) {
     const evidence = item.evidence || {};
     if (item.source === 'alert') {
-        return `<div class="action-evidence-line">
-            <span>Current value</span><strong>${escapeHtml(evidence.value)}</strong>
-            <span class="action-evidence-separator">Configured threshold</span><strong>${escapeHtml(evidence.threshold)}</strong>
+        const unit = ['disk_percent', 'bot_percentage'].includes(evidence.alert_type) ? '%' : '';
+        return `<div class="action-threshold-values">
+            <div class="action-threshold-current"><span>Current value</span><strong>${escapeHtml(evidence.value ?? '—')}${unit}</strong></div>
+            <div><span>Alert threshold</span><strong>${escapeHtml(evidence.threshold ?? '—')}${unit}</strong></div>
         </div>`;
     }
     if (item.source === 'error') {
@@ -634,25 +660,37 @@ function renderActionEvidence(item) {
 
 function openActionDialog(item) {
     selectedActionItem = item;
+    reviewHelp.open = false;
+    document.getElementById('actionDialog').dataset.severity = item.severity;
     document.getElementById('actionDialogSource').textContent = actionSourceLabel(item.source);
     document.getElementById('actionDialogTitle').textContent = item.title;
     document.getElementById('actionDialogSummary').textContent = item.summary;
     document.getElementById('actionDialogMeta').innerHTML = `
         <span class="badge badge-${item.severity}">${escapeHtml(item.severity)}</span>
         <span class="action-status action-status-${item.status}">${escapeHtml(actionStatusLabel(item.status))}</span>
-        <span>Last seen ${formatIncidentTime(item.last_seen)}</span>`;
+        <span class="action-last-seen">Last seen ${formatIncidentTime(item.last_seen)}</span>`;
     document.getElementById('actionEvidenceTitle').textContent = item.source === 'security'
         ? 'Why this was flagged'
         : item.source === 'error' ? 'Recent evidence' : 'Threshold details';
     document.getElementById('actionDialogEvidence').innerHTML = renderActionEvidence(item);
-    document.getElementById('actionNote').value = item.note || '';
+    actionNotes.open(item);
     document.getElementById('actionUpdateError').hidden = true;
-    document.getElementById('actionMoreOptions').open = false;
+    const reviewingLater = item.status === 'snoozed';
+    document.getElementById('actionReviewLater').hidden = !isOpenAction(item) && !reviewingLater;
+    document.getElementById('actionReviewLaterTitle').textContent = reviewingLater ? 'Change review time' : 'Review later';
+    document.getElementById('actionReviewDelay').value = '60';
+    document.querySelector('[data-action-status="snoozed"]').textContent = reviewingLater ? 'Update time' : 'Move to Later';
+    const reviewStatus = document.getElementById('actionReviewStatus');
+    reviewStatus.hidden = !reviewingLater || !item.snoozed_until;
+    reviewStatus.textContent = reviewingLater && item.snoozed_until
+        ? `Returns to Needs attention ${formatIncidentTime(item.snoozed_until)}. Choose Review now to bring it back sooner.`
+        : '';
     document.querySelector('[data-action-status="acknowledged"]').hidden = item.status !== 'new';
     document.querySelector('[data-action-status="new"]').hidden = isOpenAction(item);
+    document.querySelector('[data-action-status="new"]').textContent = reviewingLater ? 'Review now' : 'Reopen finding';
     document.querySelector('[data-action-status="resolved"]').hidden = ['resolved', 'dismissed'].includes(item.status);
     document.querySelector('[data-action-status="resolved"]').className = item.status === 'acknowledged' ? 'primary-button' : 'secondary-button';
-    document.getElementById('actionMoreOptions').hidden = !isOpenAction(item);
+    document.querySelector('[data-action-status="dismissed"]').hidden = !isOpenAction(item);
     document.getElementById('actionRelatedButton').hidden = !item.related_view;
     document.getElementById('actionRelatedButton').textContent = {
         error: 'Open error logs →', security: 'Open access logs →'
@@ -661,33 +699,34 @@ function openActionDialog(item) {
     if (!dialog.open) dialog.showModal();
 }
 
-function updateSelectedAction(status) {
+async function updateSelectedAction(status) {
     if (!selectedActionItem) return;
+    const item = selectedActionItem;
     const controls = document.querySelectorAll('[data-action-status]');
     controls.forEach(button => button.disabled = true);
+    actionNotes.setBusy(true);
     document.getElementById('actionUpdateError').hidden = true;
-    const payload = {
-        status,
-        note: document.getElementById('actionNote').value,
-        snooze_minutes: 60
-    };
-    fetch(`/api/action-items/${selectedActionItem.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-    })
-        .then(response => {
-            if (!response.ok) throw new Error('Unable to update finding');
-            document.getElementById('actionDialog').close();
-            return fetchActionItems();
-        })
-        .catch(error => {
-            console.error('Error updating action item:', error);
-            const message = document.getElementById('actionUpdateError');
-            message.textContent = 'Unable to save this change. Please try again.';
-            message.hidden = false;
-        })
-        .finally(() => controls.forEach(button => button.disabled = false));
+    try {
+        if (!await actionNotes.flush()) return;
+        const payload = { status };
+        if (status === 'snoozed') payload.snooze_minutes = Number(document.getElementById('actionReviewDelay').value);
+        const response = await fetch(`/api/action-items/${item.id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        if (!response.ok) throw new Error('Unable to update finding');
+        if (selectedActionItem?.id === item.id) document.getElementById('actionDialog').close();
+        await fetchActionItems();
+    } catch (error) {
+        console.error('Error updating action item:', error);
+        const message = document.getElementById('actionUpdateError');
+        message.textContent = 'Unable to save this change. Please try again.';
+        message.hidden = false;
+    } finally {
+        controls.forEach(button => button.disabled = false);
+        actionNotes.setBusy(false);
+    }
 }
 
 document.querySelectorAll('[data-action-filter]').forEach(button => {

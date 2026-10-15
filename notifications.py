@@ -13,6 +13,8 @@ from email.utils import formatdate
 from pathlib import Path
 from urllib.parse import urlparse
 
+_UNSET = object()
+
 
 def utcnow():
     return datetime.now(timezone.utc).replace(tzinfo=None)
@@ -26,6 +28,10 @@ def init_notification_storage(db_path):
                 id INTEGER PRIMARY KEY CHECK (id = 1),
                 enabled INTEGER NOT NULL,
                 severity TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS email_recipient_settings (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                recipients_json TEXT NOT NULL
             );
             CREATE TABLE IF NOT EXISTS email_outbox (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -58,17 +64,17 @@ def init_notification_storage(db_path):
 
 
 def valid_email(value):
-    return isinstance(value, str) and bool(re.fullmatch(r"[^@\s<>]+@[^@\s<>]+\.[^@\s<>]+", value))
+    return isinstance(value, str) and bool(re.fullmatch(r'[^@\s<>,;:"]+@[^@\s<>,;:"]+\.[^@\s<>,;:"]+', value))
 
 
-def email_settings(config_data):
+def email_settings(config_data, recipients=None):
     email = config_data.get("notifications", {}).get("email", {})
     smtp = email.get("smtp", {})
     username = os.environ.get("APACHEWATCH_SMTP_USERNAME", smtp.get("username", ""))
     settings = {
         "enabled": bool(email.get("enabled", False)),
         "severity": "all" if email.get("severity") == "all" else "critical",
-        "recipients": email.get("recipients", []),
+        "recipients": email.get("recipients", []) if recipients is None else recipients,
         "host": os.environ.get("APACHEWATCH_SMTP_HOST", smtp.get("host", "")),
         "security": os.environ.get("APACHEWATCH_SMTP_SECURITY", smtp.get("security", "starttls")),
         "username": username,
@@ -102,21 +108,47 @@ def email_settings(config_data):
 
 
 def preferences(config_data):
-    settings = email_settings(config_data)
     init_notification_storage(config_data["database"])
     with sqlite3.connect(config_data["database"]) as conn:
         row = conn.execute("SELECT enabled, severity FROM email_preferences WHERE id = 1").fetchone()
+        recipients = conn.execute("SELECT recipients_json FROM email_recipient_settings WHERE id = 1").fetchone()
+    settings = email_settings(config_data, json.loads(recipients[0]) if recipients else None)
     if row:
         settings["enabled"], settings["severity"] = bool(row[0]), row[1]
     return settings
 
 
-def update_preferences(config_data, enabled, severity):
-    if not isinstance(enabled, bool) or severity not in {"critical", "all"}:
+def update_preferences(config_data, enabled=_UNSET, severity=_UNSET, recipients=_UNSET):
+    if ((enabled is not _UNSET and not isinstance(enabled, bool))
+            or (severity is not _UNSET and (not isinstance(severity, str) or severity not in {"critical", "all"}))):
         raise ValueError("enabled must be a boolean and severity must be critical or all")
+    if recipients is not _UNSET:
+        if not isinstance(recipients, list) or len(recipients) > 20:
+            raise ValueError("Provide up to 20 email recipients.")
+        cleaned = []
+        seen = set()
+        for address in recipients:
+            if not isinstance(address, str) or len(address.strip()) > 254 or not valid_email(address.strip()):
+                raise ValueError("Enter a valid email address for each recipient.")
+            address = address.strip()
+            if address.casefold() not in seen:
+                cleaned.append(address)
+                seen.add(address.casefold())
+        recipients = cleaned
     init_notification_storage(config_data["database"])
-    with sqlite3.connect(config_data["database"]) as conn:
-        conn.execute("INSERT OR REPLACE INTO email_preferences(id, enabled, severity) VALUES(1, ?, ?)", (int(enabled), severity))
+    defaults = email_settings(config_data)
+    with sqlite3.connect(config_data["database"], timeout=15) as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        row = conn.execute("SELECT enabled, severity FROM email_preferences WHERE id = 1").fetchone()
+        current_enabled, current_severity = row if row else (defaults["enabled"], defaults["severity"])
+        conn.execute("INSERT OR REPLACE INTO email_preferences(id, enabled, severity) VALUES(1, ?, ?)", (
+            int(current_enabled if enabled is _UNSET else enabled),
+            current_severity if severity is _UNSET else severity,
+        ))
+        if recipients is not _UNSET:
+            conn.execute("INSERT OR REPLACE INTO email_recipient_settings(id, recipients_json) VALUES(1, ?)", (json.dumps(recipients),))
+            # Waiting emails follow the current recipient list, including removals.
+            conn.execute("UPDATE email_outbox SET recipients = ? WHERE status = 'pending'", (json.dumps(recipients),))
 
 
 def public_status(config_data):
@@ -224,12 +256,12 @@ def send_email(settings, job):
 
 
 def deliver_pending(config_data, now=None, limit=10, job_id=None):
-    settings = preferences(config_data)
-    if not settings["configured"]:
-        return {"sent": 0, "failed": 0}
     now = now or utcnow()
     result = {"sent": 0, "failed": 0}
     for _ in range(limit):
+        settings = preferences(config_data)
+        if not settings["configured"]:
+            break
         with sqlite3.connect(config_data["database"], timeout=15) as conn:
             conn.row_factory = sqlite3.Row
             conn.execute("BEGIN IMMEDIATE")
@@ -237,6 +269,7 @@ def deliver_pending(config_data, now=None, limit=10, job_id=None):
             if not row:
                 break
             job = dict(row)
+            job["recipients"] = json.dumps(settings["recipients"])
             if job["kind"] == "alert":
                 item = conn.execute("SELECT status, currently_observed, severity FROM action_items WHERE id = ?", (job["item_id"],)).fetchone()
                 if not settings["enabled"] or not item or item["status"] not in {"new", "acknowledged"} or not item["currently_observed"] or (settings["severity"] == "critical" and item["severity"] != "critical"):

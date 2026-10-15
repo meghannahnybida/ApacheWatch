@@ -4,6 +4,7 @@ from .history import save_alerts
 from .logs import parse_access_log
 from .metrics import collect_metrics
 from .traffic import analyze_access_logs
+from .settings import get_thresholds
 
 
 def get_numeric_value(data, path):
@@ -53,7 +54,7 @@ def evaluate_alerts(metrics, access_stats, config_data):
     if not alerts_config.get("enabled", True):
         return []
 
-    thresholds = alerts_config.get("thresholds", {})
+    thresholds = get_thresholds(config_data)
     alerts = []
 
     disk_percent = get_numeric_value(metrics, ["disk", "percent"])

@@ -90,8 +90,10 @@ web:
 - `PATCH /api/action-items/<id>` - Save a note, acknowledge, snooze, resolve, dismiss, or reopen a finding
 - `GET /api/traffic-chart?hours=24` - Traffic chart data (JSON, default 24 hours)
 - `GET /api/alerts` - Recent local alerts saved in SQLite
+- `GET /api/settings/thresholds` - Effective alert thresholds for this server
+- `PATCH /api/settings/thresholds` - Save validated threshold overrides
 - `GET /api/notifications/email` - Email readiness, recipient, delivery status, and background-check status
-- `PATCH /api/notifications/email` - Enable/disable email alerts and select critical-only or critical-and-warning findings
+- `PATCH /api/notifications/email` - Update email alerts, severity, or recipients independently
 - `POST /api/notifications/email/test` - Queue a test to the configured recipients (JSON body `{}`; limited to one per minute)
 
 ## Log Permissions
@@ -118,6 +120,7 @@ ApacheWatch/
 │   ├── logs.py         # Log parsing and error grouping
 │   ├── traffic.py      # Traffic analytics and security findings
 │   ├── alerts.py       # Threshold rules
+│   ├── settings.py     # Persistent threshold overrides
 │   ├── actions.py      # Action Center findings and workflow
 │   ├── database.py     # SQLite schema
 │   └── history.py      # Alert, metric, and traffic history
@@ -142,6 +145,10 @@ ApacheWatch/
 Start the app with `python apachewatch.py`, or use `apachewatch:app` as the WSGI entry point. Importing the app does not start monitoring. Routes read each app's settings from `app.config["APACHEWATCH"]`; collectors and finding builders receive configuration explicitly. `apachewatch_app.create_app(config_data=...)` creates an isolated app for tests or other deployments.
 
 Run the test suite with `python -m unittest discover -s tests -v`.
+
+Settings has **General**, **Alerts**, and **Email** tabs. In Alerts, edit the five existing thresholds and choose **Save thresholds**. Changes apply to web requests and background checks without a restart. Email lets you add or remove up to 20 recipients, including while delivery is off. Recipient changes preserve the email on/off setting.
+
+Threshold overrides and email preferences are stored in SQLite and survive restarts; `config.yaml` provides the initial values. Appearance and dashboard refresh remain browser preferences. Saved threshold overrides take precedence over the corresponding values in `config.yaml`.
 
 In Action Center, **Review later** moves a finding out of Needs attention for 15 minutes, 1 hour, 4 hours, or 1 day. The Later queue shows when it will return; **Review now** brings it back sooner. Use **Mark in progress** while investigating and **Mark resolved** after addressing the issue.
 
@@ -172,7 +179,7 @@ Check Action Center or open `http://localhost:8080/api/alerts`.
 
 ### Email Notifications
 
-Email delivery is deferred for now and disabled in this checkout. The implementation and setup outline below are retained for later. The intended recipient is `meghannahnybida@gmail.com`, configured in `config.yaml` under `notifications.email.recipients`. The sending service is separate from the recipient.
+Email delivery is deferred for now and disabled in this checkout. The implementation and setup outline below are retained for later. The initial recipient is `meghannahnybida@gmail.com`, configured in `config.yaml` under `notifications.email.recipients`. Manage the saved list in **Settings → Email**. The sending service is separate from the recipients.
 
 1. Copy `.env.example` to `.env` and fill in your outgoing email service's SMTP host, port, username, password, and sending address. Use `starttls` for a STARTTLS connection or `ssl` for implicit TLS, with the port supplied by your service. `.env` is ignored by Git and loaded by the app; existing deployment environment variables take precedence.
 2. Set `APACHEWATCH_PUBLIC_URL` if recipients should get a link to your deployed dashboard.

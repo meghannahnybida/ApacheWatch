@@ -314,7 +314,13 @@
 
     <dialog id="settingsDialog" class="settings-dialog" aria-labelledby="settingsTitle">
         <div class="chart-modal-header"><h2 id="settingsTitle">Settings</h2><form method="dialog"><button class="chart-modal-close" aria-label="Close settings">×</button></form></div>
+        <div class="settings-tabs" role="tablist" aria-label="Settings sections">
+            <button type="button" id="settingsTabGeneral" role="tab" aria-selected="true" aria-controls="settingsGeneral" data-settings-tab="general">General</button>
+            <button type="button" id="settingsTabAlerts" role="tab" aria-selected="false" aria-controls="settingsAlerts" tabindex="-1" data-settings-tab="alerts">Alerts</button>
+            <button type="button" id="settingsTabEmail" role="tab" aria-selected="false" aria-controls="settingsEmail" tabindex="-1" data-settings-tab="email">Email</button>
+        </div>
         <div class="settings-body">
+            <div id="settingsGeneral" role="tabpanel" aria-labelledby="settingsTabGeneral" data-settings-panel="general">
             <fieldset class="appearance-setting">
                 <legend>Appearance</legend>
                 <div class="theme-choices" role="group" aria-label="Color theme">
@@ -334,9 +340,31 @@
                 </select>
                 <p id="refreshSettingHelp">Live log updates use the separate Watch live control.</p>
             </div>
+            <p class="settings-saved" role="status" id="settingsSaved">Appearance and refresh preferences save in this browser.</p>
+            </div>
+            <div id="settingsAlerts" role="tabpanel" aria-labelledby="settingsTabAlerts" data-settings-panel="alerts" hidden>
+                <h3 class="settings-section-title">Alert thresholds</h3>
+                <p class="settings-section-help">Choose when a finding needs attention. Request limits apply to the recent log sample.</p>
+                <form id="thresholdSettingsForm" class="threshold-settings-form">
+                    <label>Disk usage (%)<input type="number" name="disk_percent" min="1" max="100" step="0.1" required disabled></label>
+                    <label>Server errors (5xx)<input type="number" name="server_errors_5xx" min="1" max="1000000000" step="1" required disabled></label>
+                    <label>Client errors (4xx)<input type="number" name="client_errors_4xx" min="1" max="1000000000" step="1" required disabled></label>
+                    <label>Requests from one IP<input type="number" name="requests_per_ip" min="1" max="1000000000" step="1" required disabled></label>
+                    <label>Bot traffic (%)<input type="number" name="bot_percentage" min="0" max="100" step="0.1" required disabled></label>
+                    <p class="settings-section-help">Changes apply on the next check and are saved for this server.</p>
+                    <button type="submit" class="primary-button" id="saveThresholdSettings" disabled>Save thresholds</button>
+                    <p id="thresholdSettingsMessage" role="status">Loading thresholds…</p>
+                </form>
+            </div>
+            <div id="settingsEmail" role="tabpanel" aria-labelledby="settingsTabEmail" data-settings-panel="email" hidden>
             <section class="email-setting" aria-labelledby="emailSettingTitle">
                 <h3 id="emailSettingTitle">Email notifications</h3>
-                <p id="emailRecipient">Loading recipient…</p>
+                <p id="emailRecipient">Loading recipients…</p>
+                <ul class="email-recipient-list" id="emailRecipientList" aria-label="Email recipients"></ul>
+                <form id="emailRecipientForm" class="email-recipient-form">
+                    <label for="emailRecipientInput">Add a recipient</label>
+                    <div><input type="email" id="emailRecipientInput" placeholder="name@example.com" autocomplete="email" maxlength="254" required disabled><button type="submit" class="secondary-button" id="addEmailRecipient" disabled>Add</button></div>
+                </form>
                 <label class="email-toggle"><input type="checkbox" id="emailNotificationsEnabled" disabled> Email alerts</label>
                 <label for="emailSeverity">Send alerts for</label>
                 <select id="emailSeverity" disabled><option value="critical">Critical findings</option><option value="all">Critical and warning findings</option></select>
@@ -344,7 +372,7 @@
                 <button type="button" class="secondary-button" id="sendTestEmail" disabled>Send test email</button>
                 <p id="emailNotificationMessage" role="status" hidden></p>
             </section>
-            <p class="settings-saved" role="status" id="settingsSaved">Preferences save automatically in this browser.</p>
+            </div>
         </div>
     </dialog>
 
@@ -362,5 +390,6 @@
     </dialog>
     <script src="{{ asset_url('js/action-notes.js') }}" defer></script>
     <script src="{{ asset_url('js/dashboard.js') }}" defer></script>
+    <script src="{{ asset_url('js/settings.js') }}" defer></script>
 </body>
 </html>

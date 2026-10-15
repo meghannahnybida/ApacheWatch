@@ -117,9 +117,22 @@ details[open] > summary > .disclosure-chevron, details[open] > summary > .recomm
 #last-updated { width: 100%; text-align: right; }
 .settings-button { display: flex; align-items: center; gap: 7px; min-height: 34px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 6px; color: var(--ink); background: var(--surface); font-size: 12px; }
 .settings-button:hover { background: var(--surface-hover); }
-.settings-dialog { position: fixed; inset: 0; width: min(440px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); margin: auto; padding: 0; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); color: var(--ink); }
+.settings-dialog { position: fixed; inset: 0; width: min(500px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); margin: auto; padding: 0; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); color: var(--ink); }
 .settings-dialog::backdrop { background: rgba(20,31,48,.5); }
-.settings-body { padding: 22px; }
+.settings-dialog[open] { display: flex; flex-direction: column; overflow: hidden; }
+.settings-dialog > .chart-modal-header { flex-shrink: 0; }
+.settings-body { min-height: 0; padding: 22px; overflow-y: auto; }
+.settings-tabs { display: flex; flex-shrink: 0; gap: 4px; padding: 10px 16px 0; border-bottom: 1px solid var(--line); }
+.settings-tabs button { flex: 1; min-height: 40px; margin-bottom: -1px; border: 0; border-bottom: 2px solid transparent; color: var(--muted); background: transparent; font-size: 12px; }
+.settings-tabs button[aria-selected="true"] { border-bottom-color: var(--accent); color: var(--accent-text); font-weight: 650; }
+.settings-section-title { font-size: 14px; font-weight: 650; }
+.settings-body .settings-section-help { margin: 8px 0 16px; font-size: 12px; }
+.threshold-settings-form { display: grid; gap: 14px; }
+.threshold-settings-form > label { display: grid; grid-template-columns: minmax(0, 1fr) 100px; align-items: center; gap: 12px; font-size: 12px; }
+.threshold-settings-form input { width: 100%; min-width: 0; min-height: 36px; padding: 7px 10px; border: 1px solid var(--line); border-radius: 6px; color: var(--ink); background: var(--surface-subtle); }
+.threshold-settings-form .primary-button { justify-self: start; min-height: 36px; }
+.threshold-settings-form > p { margin: 0; }
+.threshold-settings-form [role="status"].settings-error, .email-setting .settings-error { color: var(--danger); }
 .appearance-setting { min-width: 0; border: 0; }
 .appearance-setting legend, .refresh-setting label { margin-bottom: 10px; color: var(--ink); font-size: 13px; font-weight: 650; }
 .theme-choices { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 8px; }
@@ -129,14 +142,21 @@ details[open] > summary > .disclosure-chevron, details[open] > summary > .recomm
 .refresh-setting { display: grid; margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--line); }
 .refresh-setting select { width: 100%; min-height: 38px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; color: var(--ink); background: var(--surface-subtle); font-size: 13px; }
 .settings-body .settings-saved { margin-top: 24px; padding-top: 14px; border-top: 1px solid var(--line); font-size: 11px; }
-.email-setting { display: grid; gap: 8px; margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--line); }
+.email-setting { display: grid; gap: 12px; }
 .email-setting h3 { color: var(--ink); font-size: 13px; font-weight: 650; }
 .email-setting > label { color: var(--ink); font-size: 12px; }
 .email-setting .email-toggle { display: flex; align-items: center; gap: 8px; padding-block: 8px; }
 .email-setting select { min-width: 0; width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; color: var(--ink); background: var(--surface-subtle); font-size: 12px; }
 .settings-body .email-setting p { margin: 0; overflow-wrap: anywhere; }
 .email-setting .secondary-button { justify-self: start; }
-.settings-dialog { overflow-y: auto; }
+.email-recipient-list { display: grid; list-style: none; }
+.email-recipient-list li { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.email-recipient-list span { min-width: 0; overflow-wrap: anywhere; font-size: 12px; }
+.email-recipient-list button { flex-shrink: 0; color: var(--muted); }
+.email-recipient-form { display: grid; gap: 7px; }
+.email-recipient-form label { font-size: 12px; }
+.email-recipient-form > div { display: flex; gap: 8px; }
+.email-recipient-form input { width: 100%; min-width: 0; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; color: var(--ink); background: var(--surface-subtle); font-size: 12px; }
 input::placeholder, textarea::placeholder { color: var(--muted); opacity: .8; }
 .refresh-controls select, .select-field select { min-height: 34px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); font-size: 12px; }
 .section-heading, .analytics-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 12px; }

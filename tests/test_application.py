@@ -66,7 +66,7 @@ class ApplicationTests(unittest.TestCase):
             self.assertIn("refactor-test", response.get_data(as_text=True))
             self.assertEqual(client.get('/api/history').get_json()['count'], 1)
             self.assertEqual(client.get('/api/alerts').get_json()['count'], 1)
-            for asset in ('css/style.css', 'js/dashboard.js', 'js/theme.js', 'js/action-notes.js'):
+            for asset in ('css/style.css', 'js/dashboard.js', 'js/theme.js', 'js/action-notes.js', 'js/settings.js'):
                 with self.subTest(asset=asset):
                     response = client.get(f'/static/{asset}')
                     self.assertEqual(response.status_code, 200)

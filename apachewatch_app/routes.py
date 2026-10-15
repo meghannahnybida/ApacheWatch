@@ -17,8 +17,23 @@ from .history import (
 from .logs import _tail_file, group_error_incidents, parse_access_log, parse_error_log
 from .metrics import collect_metrics, collect_monitoring_health
 from .traffic import analyze_access_logs, analyze_block_recommendations
+from .settings import get_thresholds, save_thresholds
 
 web = Blueprint("web", __name__)
+
+
+@web.route("/api/settings/thresholds", methods=["GET", "PATCH"])
+def api_threshold_settings():
+    config = current_app.config["APACHEWATCH"]
+    if request.method == "PATCH":
+        payload = request.get_json(silent=True)
+        if not isinstance(payload, dict):
+            return jsonify({"error": "a JSON request body is required"}), 400
+        try:
+            save_thresholds(config, payload.get("thresholds"))
+        except ValueError as error:
+            return jsonify({"error": str(error)}), 400
+    return jsonify({"thresholds": get_thresholds(config)})
 
 
 @web.route("/api/notifications/email", methods=["GET", "PATCH"])
@@ -29,7 +44,9 @@ def api_email_notifications():
         if not isinstance(payload, dict):
             return jsonify({"error": "a JSON request body is required"}), 400
         try:
-            notifications.update_preferences(config, payload.get("enabled"), payload.get("severity"))
+            if not payload or set(payload) - {"enabled", "severity", "recipients"}:
+                raise ValueError("Provide email alerts, severity, or recipients.")
+            notifications.update_preferences(config, **payload)
         except ValueError as error:
             return jsonify({"error": str(error)}), 400
     return jsonify(notifications.public_status(config))

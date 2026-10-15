@@ -246,7 +246,7 @@ def get_traffic_chart_data(db_path, hours=24):
                     MAX(unique_ips)           AS unique_ips
                 FROM access_logs_hourly
                 GROUP BY date(hour_timestamp)
-                ORDER BY day ASC
+                ORDER BY day DESC
             ''')
         else:
             days = hours // 24

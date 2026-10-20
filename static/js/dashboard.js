@@ -638,7 +638,7 @@ function renderActionEvidence(item) {
     if (item.source === 'alert') {
         const unit = ['disk_percent', 'bot_percentage'].includes(evidence.alert_type) ? '%' : '';
         return `<div class="action-threshold-values">
-            <div class="action-threshold-current"><span>Current value</span><strong>${escapeHtml(evidence.value ?? '—')}${unit}</strong></div>
+            <div class="action-threshold-current"><span>Recorded value</span><strong>${escapeHtml(evidence.value ?? '—')}${unit}</strong></div>
             <div><span>Alert threshold</span><strong>${escapeHtml(evidence.threshold ?? '—')}${unit}</strong></div>
         </div>`;
     }
@@ -646,7 +646,8 @@ function renderActionEvidence(item) {
         const urls = (evidence.affected_urls || []).map(url => `<code>${escapeHtml(url)}</code>`).join('');
         const occurrences = (evidence.occurrences || []).slice(0, 3).map(occurrence => `
             <div class="action-occurrence"><time>${escapeHtml(occurrence.timestamp || 'Unknown time')}</time><code>${escapeHtml(occurrence.message)}</code></div>`).join('');
-        return `<p class="action-evidence-lead">Seen <strong>${evidence.count || item.occurrence_count} times</strong>${evidence.first_seen && evidence.last_seen ? ` between ${formatIncidentTime(evidence.first_seen)} and ${formatIncidentTime(evidence.last_seen)}` : ''}.</p>
+        return `<code class="action-error-message">${escapeHtml(evidence.message || item.summary || '')}</code>
+            <p class="action-evidence-lead">Seen <strong>${escapeHtml(evidence.count || item.occurrence_count)} times</strong>${evidence.first_seen && evidence.last_seen ? ` between ${formatIncidentTime(evidence.first_seen)} and ${formatIncidentTime(evidence.last_seen)}` : ''}.</p>
             ${urls ? `<div class="action-evidence-block"><span>Affected URLs</span><div class="action-code-list">${urls}</div></div>` : ''}
             ${occurrences ? `<div class="action-evidence-block"><span>Recent log lines</span><div class="action-occurrences">${occurrences}</div></div>` : ''}`;
     }
@@ -664,7 +665,25 @@ function openActionDialog(item) {
     document.getElementById('actionDialog').dataset.severity = item.severity;
     document.getElementById('actionDialogSource').textContent = actionSourceLabel(item.source);
     document.getElementById('actionDialogTitle').textContent = item.title;
-    document.getElementById('actionDialogSummary').textContent = item.summary;
+    const guidance = item.guidance || {};
+    document.getElementById('actionDialogSummary').textContent = guidance.trigger || item.summary;
+    document.getElementById('actionDialogImpact').hidden = !guidance.impact;
+    document.getElementById('actionImpactText').textContent = guidance.impact || '';
+    const steps = document.getElementById('actionGuidanceSteps');
+    steps.replaceChildren();
+    (guidance.steps || []).forEach(step => {
+        const line = document.createElement('li');
+        line.textContent = step;
+        steps.appendChild(line);
+    });
+    document.getElementById('actionGuidance').hidden = !steps.children.length;
+    const findingState = document.getElementById('actionFindingState');
+    findingState.textContent = item.currently_observed === false
+        ? 'Not seen in the latest check. Confirm the current logs and metrics before deciding whether to resolve it.'
+        : item.currently_observed && ['resolved', 'dismissed'].includes(item.status)
+            ? `Marked ${item.status}, but this pattern still appears in the latest sample. Check whether those are earlier entries or an ongoing issue.`
+            : '';
+    findingState.hidden = !findingState.textContent;
     document.getElementById('actionDialogMeta').innerHTML = `
         <span class="badge badge-${item.severity}">${escapeHtml(item.severity)}</span>
         <span class="action-status action-status-${item.status}">${escapeHtml(actionStatusLabel(item.status))}</span>
@@ -691,8 +710,8 @@ function openActionDialog(item) {
     document.querySelector('[data-action-status="resolved"]').hidden = ['resolved', 'dismissed'].includes(item.status);
     document.querySelector('[data-action-status="resolved"]').className = item.status === 'acknowledged' ? 'primary-button' : 'secondary-button';
     document.querySelector('[data-action-status="dismissed"]').hidden = !isOpenAction(item);
-    document.getElementById('actionRelatedButton').hidden = !item.related_view;
-    document.getElementById('actionRelatedButton').textContent = {
+    document.getElementById('actionRelatedButton').hidden = !guidance.action && !item.related_view;
+    document.getElementById('actionRelatedButton').textContent = guidance.action ? `${guidance.action.label} →` : {
         error: 'Open error logs →', security: 'Open access logs →'
     }[item.source] || 'View related activity →';
     const dialog = document.getElementById('actionDialog');
@@ -754,6 +773,12 @@ document.getElementById('refreshActionItems').addEventListener('click', fetchAct
 document.getElementById('actionRelatedButton').addEventListener('click', () => {
     if (!selectedActionItem) return;
     document.getElementById('actionDialog').close();
+    const action = selectedActionItem.guidance?.action;
+    if (action) {
+        if (action.view === 'logs') openLogExplorer(action.source, action.query || '', action.status || 'all');
+        else window.location.hash = action.view;
+        return;
+    }
     const evidence = selectedActionItem.evidence || {};
     if (selectedActionItem.source === 'error') {
         openLogExplorer('error', selectedActionItem.related_query || '');

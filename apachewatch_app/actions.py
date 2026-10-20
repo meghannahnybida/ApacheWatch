@@ -9,6 +9,7 @@ from .database import init_database
 from .logs import group_error_incidents, parse_access_log, parse_error_log
 from .metrics import collect_metrics
 from .traffic import analyze_access_logs, analyze_block_recommendations
+from .guidance import finding_guidance
 
 
 ACTION_ITEM_STATUSES = {"new", "acknowledged", "snoozed", "resolved", "dismissed"}
@@ -59,6 +60,7 @@ def build_action_candidates(config_data, metrics=None, access_entries=None, erro
                 "alert_type": alert_type,
                 "value": alert.get("value"),
                 "threshold": alert.get("threshold"),
+                **({"ip": alert["ip"]} if alert.get("ip") else {}),
             },
             "related_view": alert_views.get(alert_type, "overview"),
             "related_query": "",
@@ -224,6 +226,7 @@ def get_action_items(db_path, status="open", limit=100):
             item["evidence"] = {}
             item.pop("evidence_json", None)
         item["currently_observed"] = bool(item["currently_observed"])
+        item["guidance"] = finding_guidance(item)
         items.append(item)
 
     summary = {name: counts.get(name, 0) for name in ACTION_ITEM_STATUSES}

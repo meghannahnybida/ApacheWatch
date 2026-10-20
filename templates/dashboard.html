@@ -251,9 +251,15 @@
                 <div class="action-dialog-context">
                     <div class="action-dialog-meta" id="actionDialogMeta"></div>
                     <p class="action-dialog-summary" id="actionDialogSummary"></p>
+                    <p class="action-dialog-impact" id="actionDialogImpact" hidden><strong>Why it matters</strong> <span id="actionImpactText"></span></p>
+                    <p class="action-finding-state" id="actionFindingState" hidden></p>
                 </div>
                 <div class="action-detail-layout">
                     <section class="action-evidence-section" aria-labelledby="actionEvidenceTitle">
+                        <section class="action-guidance" id="actionGuidance" aria-labelledby="actionGuidanceTitle" hidden>
+                            <h3 id="actionGuidanceTitle">What to check next</h3>
+                            <ol id="actionGuidanceSteps"></ol>
+                        </section>
                         <h3 id="actionEvidenceTitle">Evidence</h3>
                         <div id="actionDialogEvidence"></div>
                     </section>

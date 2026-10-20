@@ -122,6 +122,7 @@ ApacheWatch/
 │   ├── alerts.py       # Threshold rules
 │   ├── settings.py     # Persistent threshold overrides
 │   ├── actions.py      # Action Center findings and workflow
+│   ├── guidance.py     # Finding explanations and investigation steps
 │   ├── database.py     # SQLite schema
 │   └── history.py      # Alert, metric, and traffic history
 ├── notifications.py    # Deferred email delivery feature
@@ -151,6 +152,8 @@ Settings has **General**, **Alerts**, and **Email** tabs. In Alerts, edit the fi
 Threshold overrides and email preferences are stored in SQLite and survive restarts; `config.yaml` provides the initial values. Appearance and dashboard refresh remain browser preferences. Saved threshold overrides take precedence over the corresponding values in `config.yaml`.
 
 In Action Center, **Review later** moves a finding out of Needs attention for 15 minutes, 1 hour, 4 hours, or 1 day. The Later queue shows when it will return; **Review now** brings it back sooner. Use **Mark in progress** while investigating and **Mark resolved** after addressing the issue.
+
+Finding details explain what triggered the finding, why it matters, and what to check next. Guidance uses the saved evidence and includes a shortcut to the relevant logs or dashboard view. Findings absent from the latest check are identified separately; a saved log sample may still contain entries from before a fix. Investigation guidance draws on Apache's documentation for [error logs](https://httpd.apache.org/docs/2.4/logs.html), [access rules](https://httpd.apache.org/docs/2.4/howto/access.html), and [upstream services](https://httpd.apache.org/docs/2.4/mod/mod_proxy.html).
 
 Finding notes save automatically as you type and when you close the dialog. The note field shows **Saved** after the server confirms the update. **Retry save** appears only if a save fails. Unsaved drafts are retained in the same browser so you can recover them after a refresh. Saving a note preserves the finding's status and scheduled review time.
 

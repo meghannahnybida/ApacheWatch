@@ -103,7 +103,8 @@ def evaluate_alerts(metrics, access_stats, config_data):
                 "alert_type": "requests_per_ip",
                 "message": f"{top_ip.get('ip', 'Unknown IP')} has {top_ip_requests} requests, threshold is {ip_threshold:g}",
                 "value": top_ip_requests,
-                "threshold": ip_threshold
+                "threshold": ip_threshold,
+                "ip": top_ip.get("ip"),
             })
 
     bot_percentage = get_numeric_value(access_stats, ["bot_stats", "bot_percentage"])

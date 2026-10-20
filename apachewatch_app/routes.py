@@ -18,6 +18,7 @@ from .logs import _tail_file, group_error_incidents, parse_access_log, parse_err
 from .metrics import collect_metrics, collect_monitoring_health
 from .traffic import analyze_access_logs, analyze_block_recommendations
 from .settings import get_thresholds, save_thresholds
+from .log_search import LogChangedError, search_log
 
 web = Blueprint("web", __name__)
 
@@ -158,6 +159,29 @@ def api_incidents():
     logs = parse_error_log(config["apache"]["error_log"], max_lines=scan, level_filter=level_filter)
     incidents = group_error_incidents(logs, limit=limit)
     return jsonify({"incidents": incidents, "count": len(incidents), "entries_scanned": len(logs)})
+
+
+@web.route("/api/log-search")
+def api_log_search():
+    """Search older entries in the configured log, with stable pages."""
+    source = request.args.get('source', 'error')
+    if source not in {'error', 'access'}:
+        return jsonify({'error': 'source must be error or access'}), 400
+    path = current_app.config['APACHEWATCH']['apache'].get(f'{source}_log')
+    if not path:
+        return jsonify({'error': f'No {source} log file is configured.'}), 503
+    try:
+        return jsonify(search_log(path, source, request.args))
+    except LogChangedError as error:
+        return jsonify({'error': str(error)}), 409
+    except ValueError as error:
+        return jsonify({'error': str(error)}), 400
+    except FileNotFoundError:
+        return jsonify({'error': f'The {source} log file was not found.'}), 404
+    except PermissionError:
+        return jsonify({'error': f'ApacheWatch cannot read the {source} log file. Check its file permissions.'}), 403
+    except OSError:
+        return jsonify({'error': f'Unable to search the {source} log file.'}), 503
 
 
 @web.route("/api/history")

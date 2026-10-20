@@ -6,6 +6,32 @@ import re
 from datetime import datetime
 
 
+ERROR_LINE = re.compile(r'\[([^\]]+)\]\s+\[([^\]]+)\]\s+(.+)')
+ACCESS_LINE = re.compile(r'^(\S+)\s+\S+\s+(\S+)\s+\[([^\]]+)\]\s+"(\S+)\s+(\S+)\s+(\S+)"\s+(\d+)\s+(\S+)\s*"?([^"]*)"?\s*"?([^"]*)"?')
+
+
+def parse_error_line(line):
+    """Parse one error line without shortening its diagnostic message."""
+    match = ERROR_LINE.match(line.strip())
+    if not match:
+        return {"timestamp": "", "level": "unknown", "message": line.strip()}
+    timestamp, level, message = match.groups()
+    return {"timestamp": timestamp, "level": level.split(":")[-1].lower(), "message": message}
+
+
+def parse_access_line(line):
+    """Parse one common or combined access-log line."""
+    match = ACCESS_LINE.match(line.strip())
+    if not match:
+        return None
+    ip, user, timestamp, method, path, protocol, status, size, referer, agent = match.groups()
+    return {"ip": ip, "user": user if user != "-" else None, "timestamp": timestamp,
+            "method": method, "path": path, "protocol": protocol, "status": int(status),
+            "size": int(size) if size.isdigit() else 0,
+            "referer": referer if referer and referer != "-" else None,
+            "user_agent": agent if agent else None}
+
+
 def _tail_file(log_path, max_lines):
     """Read the last max_lines lines from a file without loading it into memory.
 
@@ -55,32 +81,14 @@ def parse_error_log(log_path, max_lines=100, level_filter=None):
     try:
         lines = _tail_file(log_path, max_lines)
 
-        # Pattern for Apache error log
-        pattern = r'\[([^\]]+)\]\s+\[([^\]]+)\]\s+(.+)'
-
         for line in lines:
             line = line.strip()
             if not line:
                 continue
 
-            match = re.match(pattern, line)
-            if match:
-                timestamp_str, level_info, message = match.groups()
-                # Extract just the level (e.g., "error" from "core:error")
-                level = level_info.split(":")[-1] if ":" in level_info else level_info
-
-                entries.append({
-                    "timestamp": timestamp_str,
-                    "level": level,
-                    "message": message[:500]  # Keep enough context for incident grouping
-                })
-            else:
-                # Line didn't match pattern, store as-is
-                entries.append({
-                    "timestamp": "",
-                    "level": "unknown",
-                    "message": line[:200]
-                })
+            entry = parse_error_line(line)
+            entry['message'] = entry['message'][:200 if entry['level'] == 'unknown' else 500]
+            entries.append(entry)
 
         # Apply level filter if specified
         if level_filter:
@@ -220,31 +228,14 @@ def parse_access_log(log_path, max_lines=1000):
     try:
         lines = _tail_file(log_path, max_lines)
 
-        # Apache common/combined log format pattern
-        # IP - user [timestamp] "method path protocol" status size "referer" "user-agent"
-        pattern = r'^(\S+)\s+\S+\s+(\S+)\s+\[([^\]]+)\]\s+"(\S+)\s+(\S+)\s+(\S+)"\s+(\d+)\s+(\S+)\s*"?([^"]*)"?\s*"?([^"]*)"?'
-
         for line in lines:
             line = line.strip()
             if not line:
                 continue
 
-            match = re.match(pattern, line)
-            if match:
-                ip, user, timestamp, method, path, protocol, status, size, referer, user_agent = match.groups()
-
-                entries.append({
-                    "ip": ip,
-                    "user": user if user != "-" else None,
-                    "timestamp": timestamp,
-                    "method": method,
-                    "path": path,
-                    "protocol": protocol,
-                    "status": int(status),
-                    "size": int(size) if size.isdigit() else 0,
-                    "referer": referer if referer and referer != "-" else None,
-                    "user_agent": user_agent if user_agent else None
-                })
+            entry = parse_access_line(line)
+            if entry:
+                entries.append(entry)
 
     except PermissionError:
         print(f"WARNING: Permission denied reading access log: {log_path}", flush=True)

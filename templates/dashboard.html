@@ -150,18 +150,30 @@
                     </div>
                     <div class="log-control-bar">
                         <div class="log-toolbar">
-                            <label class="search-field" for="logSearch"><span class="sr-only">Search logs</span><input type="search" id="logSearch" placeholder="Search messages or URLs"></label>
+                            <label class="search-field" for="logSearch"><span class="sr-only">Search log</span><input type="search" id="logSearch" placeholder="Search log" maxlength="1000"></label>
                             <label class="select-field" for="logLimit">Lines <select id="logLimit"><option value="10">10</option><option value="20" selected>20</option><option value="50">50</option><option value="100">100</option><option value="500">500</option></select></label>
                             <button type="button" class="live-log-button" id="liveLogButton" aria-pressed="false"><span class="live-log-dot"></span><span class="live-log-label">Watch live</span></button>
                         </div>
                     </div>
-                    <div class="filter-buttons" id="errorLogFilters" role="group" aria-label="Error severity">
-                        <button type="button" class="filter-btn active" data-error-level="" aria-pressed="true">All levels</button>
-                        <button type="button" class="filter-btn" data-error-level="error" aria-pressed="false">Error</button>
-                        <button type="button" class="filter-btn" data-error-level="warn" aria-pressed="false">Warning</button>
-                        <button type="button" class="filter-btn" data-error-level="notice" aria-pressed="false">Notice</button>
-                        <button type="button" class="filter-btn" data-error-level="info" aria-pressed="false">Info</button>
-                    </div>
+                    <details class="log-search-filters" id="logSearchFilters">
+                        <summary>Filters <span class="disclosure-chevron" aria-hidden="true">⌄</span><span id="logFilterCount" hidden></span></summary>
+                        <div class="log-search-fields">
+                            <label for="logFrom">From<input type="datetime-local" id="logFrom" step="1"></label>
+                            <label for="logTo">To<input type="datetime-local" id="logTo" step="1"></label>
+                            <label for="logClientIP">Client IP<input type="text" id="logClientIP" placeholder="192.0.2.10" maxlength="128" spellcheck="false"></label>
+                            <label for="logURL">URL / path contains<input type="text" id="logURL" placeholder="/api/checkout" maxlength="1000" spellcheck="false"></label>
+                        </div>
+                        <p>Dates use the times written in the log. All filters apply together.</p>
+                    </details>
+                    <label class="log-level-filter" id="errorLogFilters" for="logErrorLevel">Level
+                        <select id="logErrorLevel">
+                            <option value="">All levels</option><option value="error">Error</option><option value="warn">Warning</option>
+                            <option value="crit">Critical</option><option value="alert">Alert</option><option value="emerg">Emergency</option>
+                            <option value="notice">Notice</option><option value="info">Info</option><option value="debug">Debug</option>
+                            {% for n in range(1, 9) %}<option value="trace{{ n }}">Trace {{ n }}</option>{% endfor %}
+                            <option value="unknown">Unknown</option>
+                        </select>
+                    </label>
                     <div class="access-summary" id="accessSummary" hidden></div>
                     <div class="filter-buttons" id="accessLogFilters" role="group" aria-label="HTTP response status" hidden>
                         <button type="button" class="filter-btn active" data-status-filter="all" aria-pressed="true">All responses</button>
@@ -170,16 +182,27 @@
                         <button type="button" class="filter-btn" data-status-filter="4" aria-pressed="false">Client errors · 4xx</button>
                         <button type="button" class="filter-btn" data-status-filter="5" aria-pressed="false">Server errors · 5xx</button>
                     </div>
-                    <p class="log-view-help" id="logViewHelp">Repeated messages are grouped together. Expand an issue for evidence.</p>
-                    <div id="logEntries"><div class="log-entry">Finding repeated issues...</div></div>
-                    <div id="rawLogEntries" class="raw-log" hidden>
-                        <div class="terminal-header"><span class="terminal-icon" aria-hidden="true">&gt;_</span><span id="terminalFile">error.log</span><button type="button" class="terminal-follow" id="terminalFollow" aria-pressed="true">Follow output</button></div>
-                        <div class="terminal-command-line" aria-label="Current log view"><span class="terminal-prompt" aria-hidden="true">$</span><code id="terminalCommand">tail -n 20 -- error.log</code></div>
-                        <pre id="terminalOutput" class="terminal-output" tabindex="0" aria-label="Raw log output"></pre>
-                        <p id="terminalMessage" class="raw-log-empty" role="status" hidden></p>
-                        <div class="terminal-footer"><span class="terminal-state-dot" aria-hidden="true"></span><span id="terminalStatus" role="status">Loading…</span><span class="terminal-mode-label">Log viewer</span></div>
+                    <p class="log-view-help" id="logViewHelp">Repeated messages on this page are grouped together. Expand an issue for evidence.</p>
+                    <div class="log-result-bar">
+                        <p id="logSearchStatus" role="status" aria-live="polite">Searching log…</p>
+                        <div><button type="button" class="text-button" id="clearLogSearch" hidden>Clear filters</button><button type="button" class="text-button" id="cancelLogSearch" hidden>Cancel</button><button type="button" class="text-button" id="refreshLogSearch">Refresh</button></div>
                     </div>
-                    <div id="accessLogEntries" class="access-log" hidden><div class="log-entry">Loading recent requests...</div></div>
+                    <div id="logResults" aria-busy="true">
+                        <div id="logEntries"><div class="log-entry">Finding repeated issues...</div></div>
+                        <div id="rawLogEntries" class="raw-log" hidden>
+                            <div class="terminal-header"><span class="terminal-icon" aria-hidden="true">&gt;_</span><span id="terminalFile">error.log</span><button type="button" class="terminal-follow" id="terminalFollow" aria-pressed="true">Follow output</button></div>
+                            <div class="terminal-command-line" aria-label="Current log view"><span class="terminal-prompt" aria-hidden="true">$</span><code id="terminalCommand">tail -n 20 -- error.log</code></div>
+                            <pre id="terminalOutput" class="terminal-output" tabindex="0" aria-label="Raw log output"></pre>
+                            <p id="terminalMessage" class="raw-log-empty" role="status" hidden></p>
+                            <div class="terminal-footer"><span class="terminal-state-dot" aria-hidden="true"></span><span id="terminalStatus" role="status">Loading…</span><span class="terminal-mode-label">Log viewer</span></div>
+                        </div>
+                        <div id="accessLogEntries" class="access-log" hidden><div class="log-entry">Loading recent requests...</div></div>
+                    </div>
+                    <nav class="log-pagination" aria-label="Log search pages">
+                        <button type="button" class="secondary-button" id="newerLogResults" disabled>← Newer</button>
+                        <span>Searches the current log file, including older entries.</span>
+                        <button type="button" class="secondary-button" id="olderLogResults" disabled>Older →</button>
+                    </nav>
                 </div>
             </section>
 
@@ -395,6 +418,7 @@
         <div class="chart-modal-body"><canvas id="modalChart" role="img" aria-label="Expanded traffic chart"></canvas></div>
     </dialog>
     <script src="{{ asset_url('js/action-notes.js') }}" defer></script>
+    <script src="{{ asset_url('js/log-search.js') }}" defer></script>
     <script src="{{ asset_url('js/dashboard.js') }}" defer></script>
     <script src="{{ asset_url('js/settings.js') }}" defer></script>
 </body>

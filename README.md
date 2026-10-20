@@ -85,6 +85,7 @@ web:
 - `GET /api/access-stats` - Access log analytics (top IPs, pages, status codes)
 - `GET /api/access-logs?limit=100` - Recent parsed access-log requests for interactive inspection
 - `GET /api/log-tail?source=error&limit=100` - Original recent error or access log lines in file order (up to 1,000 lines)
+- `GET /api/log-search?source=access&q=checkout&ip=192.0.2.10&status=5` - Search the configured log with optional text, IP, URL/path, date, error-level, and response-status filters; returns parsed entries, original lines, and an older-page cursor
 - `GET /api/block-recommendations` - Advisory IP/range recommendations with evidence and proposed Apache/UFW rules
 - `GET /api/action-items?status=open` - Unified alert, recurring-error, and traffic-threat inbox
 - `PATCH /api/action-items/<id>` - Save a note, acknowledge, snooze, resolve, dismiss, or reopen a finding
@@ -118,6 +119,7 @@ ApacheWatch/
 │   ├── monitoring.py   # Background checks
 │   ├── metrics.py      # System metrics and source health
 │   ├── logs.py         # Log parsing and error grouping
+│   ├── log_search.py   # Filtered log search and snapshot pagination
 │   ├── traffic.py      # Traffic analytics and security findings
 │   ├── alerts.py       # Threshold rules
 │   ├── settings.py     # Persistent threshold overrides
@@ -156,6 +158,12 @@ In Action Center, **Review later** moves a finding out of Needs attention for 15
 Finding details explain what triggered the finding, why it matters, and what to check next. Guidance uses the saved evidence and includes a shortcut to the relevant logs or dashboard view. Findings absent from the latest check are identified separately; a saved log sample may still contain entries from before a fix. Investigation guidance draws on Apache's documentation for [error logs](https://httpd.apache.org/docs/2.4/logs.html), [access rules](https://httpd.apache.org/docs/2.4/howto/access.html), and [upstream services](https://httpd.apache.org/docs/2.4/mod/mod_proxy.html).
 
 Finding notes save automatically as you type and when you close the dialog. The note field shows **Saved** after the server confirms the update. **Retry save** appears only if a save fails. Unsaved drafts are retained in the same browser so you can recover them after a refresh. Saving a note preserves the finding's status and scheduled review time.
+
+Log Explorer searches the entire currently configured error or access log, including entries older than the initial Lines selection. **Filters** expands date/time, exact client IP (IPv4 or IPv6), and URL/path controls. Text and URL searches are literal and case-insensitive; all selected filters apply together. Error level and HTTP response filters also work in Terminal. Dates use the local times printed in the log, including both endpoints; lines without a readable timestamp are excluded when a date filter is set.
+
+**Older** and **Newer** navigate matching pages; repeated errors are grouped within each page. Terminal preserves original line text and shows that page in file order. Browsing history pauses live updates, while **Refresh** starts at the latest entries. Pages use a file snapshot so newly appended lines do not shift older pages. A rotated, truncated, or rewritten log prompts a refresh. Search covers the configured file; rotated archives such as `.log.1` and `.gz` are not included.
+
+The search API accepts `source`, `q`, `ip`, `url`, `from`, `to`, `level`, `status` (all, 2, 3, 4, or 5), `limit` (up to 500), and `cursor`. Dates are ISO local date/times without a timezone. Reuse `next_cursor` with the same filters to continue backwards. Each request scans at most roughly 8 MiB, stopping at a line boundary; the dashboard continues across empty batches automatically. `count` is the number of matches on that page, not a total for the file. Search limits individual lines to 1 MiB.
 
 ### Generate Test Logs
 

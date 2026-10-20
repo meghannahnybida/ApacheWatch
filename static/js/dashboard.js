@@ -14,19 +14,44 @@ const errorLogFilters = document.getElementById('errorLogFilters');
 const accessLogFilters = document.getElementById('accessLogFilters');
 const logLimit = document.getElementById('logLimit');
 const logSearch = document.getElementById('logSearch');
+const logFilterFields = ['logFrom', 'logTo', 'logClientIP', 'logURL'].map(id => document.getElementById(id));
+const logErrorLevel = document.getElementById('logErrorLevel');
+let logSearchError = '';
 let currentLogs = []; // Incident groups currently loaded
 let currentRawLogs = [];
 let currentAccessLogs = [];
 let currentAccessSummary = {};
 let activeAccessStatus = 'all';
 const initialErrorLevel = new URLSearchParams(window.location.search).get('level') || '';
-let activeErrorLevel = ['', 'error', 'warn', 'notice', 'info'].includes(initialErrorLevel) ? initialErrorLevel : '';
+let activeErrorLevel = Array.from(logErrorLevel.options).some(option => option.value === initialErrorLevel) ? initialErrorLevel : '';
 const savedLogView = localStorage.getItem('logView');
 let activeLogFormat = localStorage.getItem('logFormat') === 'terminal' || (!localStorage.getItem('logFormat') && savedLogView === 'raw') ? 'terminal' : 'formatted';
 let activeLogSource = localStorage.getItem('logSource') === 'access' || savedLogView === 'access' ? 'access' : 'error';
 let activeLogView = activeLogFormat === 'terminal' ? 'raw' : activeLogSource === 'access' ? 'access' : 'grouped';
 let liveRefreshEnabled = false;
-const logRequestIds = { grouped: 0, raw: 0, access: 0 };
+const logBrowser = new window.ApacheWatchLogSearch({
+    getParams: () => ({ source: activeLogSource, limit: logLimit.value, q: logSearch.value,
+        from: logFilterFields[0].value, to: logFilterFields[1].value,
+        ip: logFilterFields[2].value, url: logFilterFields[3].value,
+        level: activeLogSource === 'error' ? activeErrorLevel : '',
+        status: activeLogSource === 'access' ? activeAccessStatus : 'all' }),
+    onResult: data => {
+        currentLogs = data.incidents || [];
+        currentRawLogs = data.lines || [];
+        currentAccessLogs = (data.entries || []).filter(entry => entry.status != null);
+        currentAccessSummary = data.summary || {};
+        terminalFilename = data.filename;
+        terminalError = logSearchError = '';
+        renderActiveLogView();
+    },
+    onError: message => {
+        currentLogs = currentRawLogs = currentAccessLogs = [];
+        currentAccessSummary = {};
+        terminalError = logSearchError = message;
+        renderActiveLogView();
+    },
+    onBrowse: () => stopTailMode(),
+});
 
 function readJSON(response) {
     if (!response.ok) throw new Error(`Request failed (${response.status})`);
@@ -87,7 +112,6 @@ if (Array.from(logLimit.options).some(option => option.value === savedLogLimit))
 }
 
 setLogSource(activeLogSource);
-fetchLogs();
 
 if (localStorage.getItem('tailMode') === 'true') {
     setLogView('raw');
@@ -109,8 +133,50 @@ logLimit.addEventListener('change', function() {
 });
 
 logSearch.addEventListener('input', function() {
-    renderActiveLogView();
+    updateLogFilterCount();
+    logBrowser.schedule();
 });
+logSearch.addEventListener('keydown', event => {
+    if (event.key === 'Enter') { event.preventDefault(); fetchActiveLogData(); }
+});
+logFilterFields.forEach(field => field.addEventListener('input', () => {
+    updateLogFilterCount();
+    logBrowser.schedule();
+}));
+document.getElementById('clearLogSearch').addEventListener('click', () => {
+    clearLogFilters();
+    fetchActiveLogData();
+    logSearch.focus();
+});
+
+function updateLogFilterCount() {
+    const count = logFilterFields.filter(field => field.value.trim()).length;
+    document.getElementById('logFilterCount').hidden = !count;
+    document.getElementById('logFilterCount').textContent = count;
+    document.getElementById('clearLogSearch').hidden = !hasLogFilters();
+}
+
+function hasLogFilters() {
+    return Boolean(logSearch.value.trim() || logFilterFields.some(field => field.value.trim()) ||
+        (activeLogSource === 'error' ? activeErrorLevel : activeAccessStatus !== 'all'));
+}
+
+function clearLogFilters() {
+    logSearch.value = '';
+    logFilterFields.forEach(field => field.value = '');
+    activeErrorLevel = '';
+    activeAccessStatus = 'all';
+    syncErrorLevelControl();
+    document.querySelectorAll('[data-status-filter]').forEach(button => {
+        const active = button.dataset.statusFilter === 'all';
+        button.classList.toggle('active', active);
+        button.setAttribute('aria-pressed', String(active));
+    });
+    const url = new URL(window.location.href);
+    url.searchParams.delete('level');
+    window.history.replaceState(null, '', url);
+    updateLogFilterCount();
+}
 
 document.querySelectorAll('[data-log-source]').forEach(button => {
     button.addEventListener('click', () => setLogSource(button.dataset.logSource));
@@ -142,41 +208,34 @@ document.querySelectorAll('[data-status-filter]').forEach(button => {
             item.classList.toggle('active', item === button);
             item.setAttribute('aria-pressed', String(item === button));
         });
-        filterAndDisplayAccessLogs();
+        updateLogFilterCount();
+        fetchActiveLogData();
     });
 });
 
-function syncErrorLevelButtons() {
-    document.querySelectorAll('[data-error-level]').forEach(button => {
-        const active = button.dataset.errorLevel === activeErrorLevel;
-        button.classList.toggle('active', active);
-        button.setAttribute('aria-pressed', String(active));
-    });
+function syncErrorLevelControl() {
+    logErrorLevel.value = activeErrorLevel;
 }
 
-document.querySelectorAll('[data-error-level]').forEach(button => {
-    button.addEventListener('click', () => {
-        activeErrorLevel = button.dataset.errorLevel;
-        syncErrorLevelButtons();
-        const url = new URL(window.location.href);
-        if (activeErrorLevel) url.searchParams.set('level', activeErrorLevel);
-        else url.searchParams.delete('level');
-        window.history.replaceState(null, '', url);
-        // Refresh both formats so switching displays preserves the selected level.
-        fetchLogs();
-        fetchRawLogs();
-    });
+logErrorLevel.addEventListener('change', () => {
+    activeErrorLevel = logErrorLevel.value;
+    const url = new URL(window.location.href);
+    if (activeErrorLevel) url.searchParams.set('level', activeErrorLevel);
+    else url.searchParams.delete('level');
+    window.history.replaceState(null, '', url);
+    updateLogFilterCount();
+    fetchActiveLogData();
 });
-syncErrorLevelButtons();
+syncErrorLevelControl();
 
-function setLogSource(source) {
+function setLogSource(source, refresh = true) {
     const nextSource = source === 'access' ? 'access' : 'error';
     if (nextSource !== activeLogSource) {
         logSearch.value = '';
-        currentRawLogs = [];
+        currentLogs = currentRawLogs = currentAccessLogs = [];
+        currentAccessSummary = {};
         terminalOutput.textContent = '';
-        terminalError = '';
-        ++logRequestIds.raw;
+        terminalError = logSearchError = '';
     }
     terminalFilename = `${nextSource}.log`;
     activeLogSource = nextSource;
@@ -187,21 +246,14 @@ function setLogSource(source) {
         button.setAttribute('aria-pressed', String(active));
     });
     setLogView(activeLogFormat === 'terminal' || liveRefreshEnabled ? 'raw' : activeLogSource === 'access' ? 'access' : 'grouped');
-    if (liveRefreshEnabled) startTailMode();
+    updateLogFilterCount();
+    if (refresh) fetchActiveLogData();
 }
 
 function openLogExplorer(source, query = '', statusFamily = 'all') {
-    // A drill-down should show all matching evidence, regardless of an earlier level filter.
-    if (source === 'error') {
-        activeErrorLevel = '';
-        syncErrorLevelButtons();
-        const url = new URL(window.location.href);
-        url.searchParams.delete('level');
-        window.history.replaceState(null, '', url);
-        fetchLogs();
-        fetchRawLogs();
-    }
-    setLogSource(source);
+    // Clear previous filters so a finding's evidence cannot be hidden by them.
+    clearLogFilters();
+    setLogSource(source, false);
     logSearch.value = query;
     if (source === 'access') {
         activeAccessStatus = statusFamily;
@@ -213,8 +265,8 @@ function openLogExplorer(source, query = '', statusFamily = 'all') {
     }
     if (window.location.hash !== '#logs') window.location.hash = 'logs';
     else showView('logs');
-    if (source === 'access') fetchAccessLogs();
-    else renderActiveLogView();
+    updateLogFilterCount();
+    fetchActiveLogData();
 }
 
 function setLogView(view) {
@@ -229,27 +281,27 @@ function setLogView(view) {
     const largeLimit = logLimit.querySelector('[value="500"]');
     largeLimit.disabled = activeLogView !== 'raw';
     largeLimit.hidden = activeLogView !== 'raw';
-    if (activeLogView !== 'raw' && Number(logLimit.value) > 100) logLimit.value = '100';
+    const limitChanged = activeLogView !== 'raw' && Number(logLimit.value) > 100;
+    if (limitChanged) logLimit.value = '100';
     logEntries.hidden = activeLogView !== 'grouped';
     rawLogEntries.hidden = activeLogView !== 'raw';
     accessLogEntries.hidden = activeLogView !== 'access';
-    errorLogFilters.hidden = activeLogView !== 'grouped';
-    accessLogFilters.hidden = activeLogView !== 'access';
+    errorLogFilters.hidden = activeLogSource !== 'error';
+    accessLogFilters.hidden = activeLogSource !== 'access';
     accessSummary.hidden = activeLogView !== 'access';
     const helpText = {
-        grouped: 'Repeated messages are grouped together. Expand an issue for evidence.',
-        raw: 'Original log lines, oldest to newest. Watch live checks for updates every 5 seconds.',
-        access: 'Recent requests. Expand a row for its referrer, protocol, and user agent.'
+        grouped: 'Repeated messages on this page are grouped together. Newest matches first.',
+        raw: 'Matching original lines, oldest to newest on this page. Watch live checks every 5 seconds.',
+        access: 'Newest matching requests first. Expand a row for its referrer, protocol, and user agent.'
     };
     document.getElementById('logViewHelp').textContent = helpText[activeLogView];
-    logSearch.placeholder = activeLogView === 'raw' ? 'search log' : activeLogView === 'access' ? 'Search requests, IPs, or status' : 'Search messages or URLs';
+    logSearch.placeholder = 'Search log';
     updateLiveLogButton();
     if (activeLogView === 'raw') {
         document.getElementById('terminalFile').textContent = terminalFilename;
         filterAndDisplayRawLogs();
-        fetchRawLogs();
-    } else if (activeLogView === 'access' && currentAccessLogs.length === 0) fetchAccessLogs();
-    else renderActiveLogView();
+    } else renderActiveLogView();
+    if (limitChanged) fetchActiveLogData();
 }
 
 function renderActiveLogView() {
@@ -259,9 +311,7 @@ function renderActiveLogView() {
 }
 
 function fetchActiveLogData() {
-    if (activeLogView === 'access') fetchAccessLogs();
-    else if (activeLogView === 'raw') fetchRawLogs();
-    else fetchLogs();
+    return logBrowser.search();
 }
 
 function startTailMode() {
@@ -269,7 +319,7 @@ function startTailMode() {
     localStorage.setItem('tailMode', 'true');
     if (tailInterval) clearInterval(tailInterval);
     fetchActiveLogData();
-    tailInterval = setInterval(fetchActiveLogData, 5000);
+    tailInterval = setInterval(() => { if (!logBrowser.loading) fetchActiveLogData(); }, 5000);
     updateLiveLogButton();
 }
 
@@ -291,29 +341,15 @@ function updateLiveLogButton() {
 }
 
 function filterAndDisplayLogs() {
-    const searchTerm = logSearch.value.toLowerCase().trim();
-
+    if (logSearchError) {
+        logEntries.innerHTML = `<div class="empty-state action-error">${escapeHtml(logSearchError)}</div>`;
+        return;
+    }
     if (currentLogs.length === 0) {
-        logEntries.innerHTML = '<div class="empty-state">No recent issues at this severity. Check the log-file warning on Overview if you expected activity.</div>';
+        logEntries.innerHTML = '<div class="empty-state">No matching error messages. Try Terminal to inspect unformatted lines.</div>';
         return;
     }
-
-    // Filter logs based on search term
-    let filteredLogs = currentLogs;
-    if (searchTerm) {
-        filteredLogs = currentLogs.filter(entry => {
-            return entry.message.toLowerCase().includes(searchTerm) ||
-                   entry.level.toLowerCase().includes(searchTerm) ||
-                   entry.affected_urls.some(url => url.toLowerCase().includes(searchTerm));
-        });
-    }
-
-    if (filteredLogs.length === 0) {
-        logEntries.innerHTML = `<div class="empty-state">No issues match “${escapeHtml(searchTerm)}”.</div>`;
-        return;
-    }
-
-    logEntries.innerHTML = filteredLogs.map(entry => {
+    logEntries.innerHTML = currentLogs.map(entry => {
         const maxTrend = Math.max(...entry.trend, 1);
         const bars = entry.trend.map(value => `<span style="height:${Math.max(3, value / maxTrend * 22)}px" title="${value} occurrence${value === 1 ? '' : 's'}"></span>`).join('');
         const urls = entry.affected_urls.length
@@ -340,36 +376,35 @@ function filterAndDisplayLogs() {
 }
 
 function filterAndDisplayRawLogs() {
-    const search = logSearch.value.trim().toLowerCase();
-    const filtered = search ? currentRawLogs.filter(line => line.toLowerCase().includes(search)) : currentRawLogs;
+    const search = hasLogFilters();
+    const filtered = currentRawLogs;
     const text = filtered.join('\n');
     const scrollTop = terminalOutput.scrollTop;
     // Preserve text selection and scroll position when a poll returns the same lines.
     if (terminalOutput.textContent !== text) terminalOutput.textContent = text;
     terminalOutput.hidden = filtered.length === 0;
     terminalMessage.hidden = filtered.length > 0 && !terminalError;
-    terminalMessage.textContent = terminalError || (search ? 'No lines match this search.' : 'No lines in this log yet.');
+    terminalMessage.textContent = terminalError || (search ? 'No lines match these filters.' : 'No lines in this log yet.');
     terminalMessage.classList.toggle('raw-log-error', Boolean(terminalError));
     document.getElementById('terminalFile').textContent = terminalFilename;
-    // This caption reflects the tail view; log output remains unchanged and selectable.
-    document.getElementById('terminalCommand').textContent = `tail -n ${logLimit.value}${liveRefreshEnabled ? ' -f' : ''} -- ${terminalFilename}`;
+    document.getElementById('terminalCommand').textContent = search || logBrowser.index > 0
+        ? `# ${search ? 'Search results' : 'Log history'} · page ${Math.max(1, logBrowser.index + 1)} · ${terminalFilename}`
+        : `tail -n ${logLimit.value}${liveRefreshEnabled ? ' -f' : ''} -- ${terminalFilename}`;
     rawLogEntries.classList.toggle('watching', liveRefreshEnabled);
-    document.getElementById('terminalStatus').textContent = terminalError ? 'Unable to read log' : `${filtered.length}${search ? ` of ${currentRawLogs.length}` : ''} lines · ${liveRefreshEnabled ? 'Live · 5s' : 'Paused'}`;
+    document.getElementById('terminalStatus').textContent = terminalError ? 'Unable to read log' : `${filtered.length} lines · ${liveRefreshEnabled ? 'Live · 5s' : 'Paused'}`;
     terminalOutput.scrollTop = terminalFollowEnabled ? terminalOutput.scrollHeight : scrollTop;
 }
 
 function filterAndDisplayAccessLogs() {
-    const searchTerm = logSearch.value.toLowerCase().trim();
-    const filtered = currentAccessLogs.filter(entry => {
-        const statusMatches = activeAccessStatus === 'all' || String(entry.status).startsWith(activeAccessStatus);
-        const searchable = [entry.timestamp, entry.status, entry.method, entry.path, entry.ip,
-            entry.protocol, entry.referer, entry.user_agent, entry.user].filter(Boolean).join(' ').toLowerCase();
-        return statusMatches && (!searchTerm || searchable.includes(searchTerm));
-    });
+    const filtered = currentAccessLogs;
 
     renderAccessSummary();
+    if (logSearchError) {
+        accessLogEntries.innerHTML = `<div class="access-log-empty access-log-error">${escapeHtml(logSearchError)}</div>`;
+        return;
+    }
     if (filtered.length === 0) {
-        accessLogEntries.innerHTML = `<div class="access-log-empty">${searchTerm || activeAccessStatus !== 'all' ? 'No requests match the current filters.' : 'No recent access-log requests found.'}</div>`;
+        accessLogEntries.innerHTML = '<div class="access-log-empty">No matching requests. Unformatted lines can be viewed in Terminal.</div>';
         return;
     }
 
@@ -793,67 +828,6 @@ document.getElementById('actionRelatedButton').addEventListener('click', () => {
     }
 });
 
-function fetchLogs() {
-    const requestId = ++logRequestIds.grouped;
-    const params = new URLSearchParams({ limit: logLimit.value });
-    if (activeErrorLevel) params.set('level', activeErrorLevel);
-    fetch(`/api/incidents?${params}`)
-        .then(readJSON)
-        .then(data => {
-            if (requestId !== logRequestIds.grouped) return;
-            // Get last N entries based on user preference
-            const limit = parseInt(logLimit.value);
-            currentLogs = data.incidents.slice(0, limit);
-            filterAndDisplayLogs();
-        })
-        .catch(error => {
-            if (requestId !== logRequestIds.grouped) return;
-            console.error('Error fetching logs:', error);
-            logEntries.innerHTML = '<div class="empty-state action-error">Unable to load issues. Try refreshing the page.</div>';
-        });
-}
-
-function fetchRawLogs() {
-    const requestId = ++logRequestIds.raw;
-    const source = activeLogSource;
-    const params = new URLSearchParams({source, limit:logLimit.value});
-    return fetch(`/api/log-tail?${params}`)
-        .then(async response => {
-            const data = await response.json();
-            if (!response.ok) throw new Error(data.error || 'Unable to read this log file.');
-            return data;
-        })
-        .then(data => {
-            if (requestId !== logRequestIds.raw || source !== activeLogSource) return;
-            currentRawLogs = data.lines || [];
-            terminalFilename = data.filename || `${source}.log`;
-            terminalError = '';
-            filterAndDisplayRawLogs();
-        })
-        .catch(error => {
-            if (requestId !== logRequestIds.raw || source !== activeLogSource) return;
-            terminalError = error.message || 'Unable to read this log file.';
-            filterAndDisplayRawLogs();
-        });
-}
-
-function fetchAccessLogs() {
-    const requestId = ++logRequestIds.access;
-    const params = new URLSearchParams({ limit: logLimit.value });
-    fetch(`/api/access-logs?${params.toString()}`)
-        .then(readJSON)
-        .then(data => {
-            if (requestId !== logRequestIds.access) return;
-            currentAccessLogs = data.entries || [];
-            currentAccessSummary = data.summary || {};
-            filterAndDisplayAccessLogs();
-        })
-        .catch(error => {
-            if (requestId !== logRequestIds.access) return;
-            console.error('Error fetching access logs:', error);
-            accessLogEntries.innerHTML = '<div class="access-log-empty access-log-error">Unable to read the access log.</div>';
-        });
-}
 
 // Fetch access log analytics
 function fetchAccessStats() {

@@ -3,7 +3,9 @@
 import json
 import sqlite3
 from datetime import datetime, timedelta
+from contextlib import closing
 
+from .activity import record_activity
 from .alerts import evaluate_alerts
 from .database import init_database
 from .logs import group_error_incidents, parse_access_log, parse_error_log
@@ -116,106 +118,88 @@ def build_action_candidates(config_data, metrics=None, access_entries=None, erro
 def sync_action_items(db_path, candidates):
     """Refresh observed findings while preserving their workflow state."""
     init_database(db_path)
-    now = datetime.now().isoformat()
-    conn = sqlite3.connect(db_path)
-    conn.row_factory = sqlite3.Row
-    cursor = conn.cursor()
-    cursor.execute("SELECT source_key, status, currently_observed FROM action_items")
-    previous = {row["source_key"]: dict(row) for row in cursor.fetchall()}
-
-    # A finding can remain in the inbox even after it stops appearing in the
-    # current scan, but the UI should make that distinction visible.
-    cursor.execute("UPDATE action_items SET currently_observed = 0")
-
-    for candidate in candidates:
-        previous_item = previous.get(candidate["source_key"])
-        reappeared_after_resolution = bool(
-            previous_item
-            and previous_item["status"] == "resolved"
-            and not previous_item["currently_observed"]
-        )
-        cursor.execute('''
-            INSERT INTO action_items (
-                source, source_key, severity, title, summary, evidence_json,
-                related_view, related_query, status, note, created_at,
-                updated_at, last_seen, occurrence_count, currently_observed
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'new', '', ?, ?, ?, ?, 1)
-            ON CONFLICT(source_key) DO UPDATE SET
-                severity = excluded.severity,
-                title = excluded.title,
-                summary = excluded.summary,
-                evidence_json = excluded.evidence_json,
-                related_view = excluded.related_view,
-                related_query = excluded.related_query,
-                last_seen = excluded.last_seen,
-                occurrence_count = excluded.occurrence_count,
-                currently_observed = 1
-        ''', (
-            candidate["source"],
-            candidate["source_key"],
-            candidate["severity"],
-            candidate["title"],
-            candidate["summary"],
-            json.dumps(candidate.get("evidence", {}), default=str),
-            candidate.get("related_view"),
-            candidate.get("related_query", ""),
-            now,
-            now,
-            now,
-            max(1, int(candidate.get("occurrence_count", 1))),
-        ))
-        if reappeared_after_resolution:
-            cursor.execute('''
-                UPDATE action_items
-                SET status = 'new', snoozed_until = NULL, updated_at = ?
-                WHERE source_key = ?
-            ''', (now, candidate["source_key"]))
-
-    conn.commit()
-    conn.close()
+    candidates = {candidate["source_key"]: candidate for candidate in candidates}
+    with closing(sqlite3.connect(db_path)) as conn, conn:
+        conn.row_factory = sqlite3.Row
+        conn.execute('BEGIN IMMEDIATE')
+        now = datetime.now().isoformat()
+        previous = {row["source_key"]: dict(row) for row in conn.execute(
+            "SELECT id, source_key, status, currently_observed FROM action_items"
+        )}
+        conn.execute("UPDATE action_items SET currently_observed = 0")
+        for key, candidate in candidates.items():
+            previous_item = previous.get(key)
+            result = conn.execute('''
+                INSERT INTO action_items (
+                    source, source_key, severity, title, summary, evidence_json,
+                    related_view, related_query, status, note, created_at,
+                    updated_at, last_seen, occurrence_count, currently_observed
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'new', '', ?, ?, ?, ?, 1)
+                ON CONFLICT(source_key) DO UPDATE SET
+                    severity = excluded.severity,
+                    title = excluded.title,
+                    summary = excluded.summary,
+                    evidence_json = excluded.evidence_json,
+                    related_view = excluded.related_view,
+                    related_query = excluded.related_query,
+                    last_seen = excluded.last_seen,
+                    occurrence_count = excluded.occurrence_count,
+                    currently_observed = 1
+            ''', (candidate["source"], key, candidate["severity"], candidate["title"],
+                  candidate["summary"], json.dumps(candidate.get("evidence", {}), default=str),
+                  candidate.get("related_view"), candidate.get("related_query", ""),
+                  now, now, now, max(1, int(candidate.get("occurrence_count", 1)))))
+            if not previous_item:
+                record_activity(conn, result.lastrowid, 'first_seen', now)
+            elif not previous_item["currently_observed"]:
+                item_id = previous_item['id']
+                record_activity(conn, item_id, 'observation_changed', now, observed=True)
+                if previous_item["status"] == "resolved":
+                    conn.execute('''
+                        UPDATE action_items SET status = 'new', snoozed_until = NULL, updated_at = ?
+                        WHERE id = ?
+                    ''', (now, item_id))
+                    record_activity(conn, item_id, 'status_changed', now,
+                                    from_status='resolved', to_status='new', reason='finding_returned')
+        for key, item in previous.items():
+            if item['currently_observed'] and key not in candidates:
+                record_activity(conn, item['id'], 'observation_changed', now, observed=False)
 
 
 def get_action_items(db_path, status="open", limit=100):
     """Return action items and workflow summary, reopening expired snoozes."""
-    init_database(db_path)
-    now = datetime.now().isoformat()
-    conn = sqlite3.connect(db_path)
-    conn.row_factory = sqlite3.Row
-    cursor = conn.cursor()
-    cursor.execute('''
-        UPDATE action_items
-        SET status = 'new', snoozed_until = NULL, updated_at = ?
-        WHERE status = 'snoozed' AND snoozed_until IS NOT NULL AND snoozed_until <= ?
-    ''', (now, now))
-
     clauses = []
     params = []
     if status == "open":
         clauses.append("status IN ('new', 'acknowledged')")
     elif status != "all":
         if status not in ACTION_ITEM_STATUSES:
-            conn.close()
             raise ValueError("invalid action item status")
         clauses.append("status = ?")
         params.append(status)
     where_sql = f"WHERE {' AND '.join(clauses)}" if clauses else ""
     params.append(min(max(int(limit), 1), 500))
-    cursor.execute(f'''
-        SELECT * FROM action_items
-        {where_sql}
-        ORDER BY
-            CASE status WHEN 'new' THEN 0 WHEN 'acknowledged' THEN 1
-                        WHEN 'snoozed' THEN 2 WHEN 'resolved' THEN 3 ELSE 4 END,
-            currently_observed DESC,
-            CASE severity WHEN 'critical' THEN 0 WHEN 'warning' THEN 1 ELSE 2 END,
-            last_seen DESC
-        LIMIT ?
-    ''', params)
-    rows = cursor.fetchall()
-    cursor.execute("SELECT status, COUNT(*) AS count FROM action_items GROUP BY status")
-    counts = {row["status"]: row["count"] for row in cursor.fetchall()}
-    conn.commit()
-    conn.close()
+    init_database(db_path)
+    with closing(sqlite3.connect(db_path)) as conn, conn:
+        conn.row_factory = sqlite3.Row
+        conn.execute('BEGIN IMMEDIATE')
+        now = datetime.now().isoformat()
+        _expire_reviews(conn, now)
+        cursor = conn.cursor()
+        cursor.execute(f'''
+            SELECT * FROM action_items
+            {where_sql}
+            ORDER BY
+                CASE status WHEN 'new' THEN 0 WHEN 'acknowledged' THEN 1
+                            WHEN 'snoozed' THEN 2 WHEN 'resolved' THEN 3 ELSE 4 END,
+                currently_observed DESC,
+                CASE severity WHEN 'critical' THEN 0 WHEN 'warning' THEN 1 ELSE 2 END,
+                last_seen DESC
+            LIMIT ?
+        ''', params)
+        rows = cursor.fetchall()
+        cursor.execute("SELECT status, COUNT(*) AS count FROM action_items GROUP BY status")
+        counts = {row["status"]: row["count"] for row in cursor.fetchall()}
 
     items = []
     for row in rows:
@@ -235,48 +219,79 @@ def get_action_items(db_path, status="open", limit=100):
     return items, summary
 
 
-def update_action_note(db_path, item_id, note):
-    """Save a note without changing workflow state or a scheduled review time."""
+def _expire_reviews(conn, now):
+    expired = conn.execute('''
+        SELECT id, snoozed_until FROM action_items
+        WHERE status = 'snoozed' AND snoozed_until IS NOT NULL AND snoozed_until <= ?
+    ''', (now,)).fetchall()
+    for item in expired:
+        conn.execute("UPDATE action_items SET status = 'new', snoozed_until = NULL, updated_at = ? WHERE id = ?",
+                     (now, item['id']))
+        record_activity(conn, item['id'], 'status_changed', now, from_status='snoozed',
+                        to_status='new', reason='review_due', snoozed_until=item['snoozed_until'])
+
+
+def _validate_note(note):
     if not isinstance(note, str) or len(note) > 2000:
         raise ValueError("note must be text of at most 2000 characters")
+
+
+def _record_note_change(conn, item_id, previous, note, now):
+    record_activity(conn, item_id, 'note_changed', now, previous_note=previous, note=note)
+
+
+def update_action_note(db_path, item_id, note):
+    """Save a note and its history, preserving workflow and scheduled review."""
+    _validate_note(note)
     init_database(db_path)
-    with sqlite3.connect(db_path) as conn:
-        cursor = conn.execute(
-            "UPDATE action_items SET note = ?, updated_at = ? WHERE id = ?",
-            (note, datetime.now().isoformat(), item_id),
-        )
-        return bool(cursor.rowcount)
+    with closing(sqlite3.connect(db_path)) as conn, conn:
+        conn.row_factory = sqlite3.Row
+        conn.execute('BEGIN IMMEDIATE')
+        previous = conn.execute('SELECT note FROM action_items WHERE id = ?', (item_id,)).fetchone()
+        if previous is None:
+            return False
+        if previous['note'] != note:
+            now = datetime.now().isoformat()
+            conn.execute('UPDATE action_items SET note = ?, updated_at = ? WHERE id = ?', (note, now, item_id))
+            _record_note_change(conn, item_id, previous['note'], note, now)
+        return True
 
 
 def update_action_item(db_path, item_id, status, note=None, snooze_minutes=60):
-    """Apply a workflow decision to one action item."""
-    if status not in ACTION_ITEM_STATUSES:
+    """Apply a workflow decision and record its actual changes atomically."""
+    if not isinstance(status, str) or status not in ACTION_ITEM_STATUSES:
         raise ValueError("invalid action item status")
-    init_database(db_path)
-    now = datetime.now()
-    snoozed_until = None
+    if note is not None:
+        _validate_note(note)
     if status == "snoozed":
         try:
             snooze_minutes = min(max(int(snooze_minutes), 1), 10080)
         except (TypeError, ValueError):
-            raise ValueError("snooze_minutes must be an integer")
-        snoozed_until = (now + timedelta(minutes=snooze_minutes)).isoformat()
-
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
-    if note is None:
-        cursor.execute('''
-            UPDATE action_items
-            SET status = ?, updated_at = ?, snoozed_until = ?
-            WHERE id = ?
-        ''', (status, now.isoformat(), snoozed_until, item_id))
-    else:
-        cursor.execute('''
-            UPDATE action_items
-            SET status = ?, note = ?, updated_at = ?, snoozed_until = ?
-            WHERE id = ?
-        ''', (status, str(note)[:2000], now.isoformat(), snoozed_until, item_id))
-    changed = cursor.rowcount
-    conn.commit()
-    conn.close()
-    return bool(changed)
+            raise ValueError("snooze_minutes must be an integer") from None
+    init_database(db_path)
+    with closing(sqlite3.connect(db_path)) as conn, conn:
+        conn.row_factory = sqlite3.Row
+        conn.execute('BEGIN IMMEDIATE')
+        previous = conn.execute('SELECT * FROM action_items WHERE id = ?', (item_id,)).fetchone()
+        if previous is None:
+            return False
+        now = datetime.now()
+        snoozed_until = (now + timedelta(minutes=snooze_minutes)).isoformat() if status == 'snoozed' else None
+        next_note = previous['note'] if note is None else note
+        note_changed = next_note != previous['note']
+        status_changed = status != previous['status']
+        review_changed = snoozed_until != previous['snoozed_until']
+        if not (note_changed or status_changed or review_changed):
+            return True
+        conn.execute('''
+            UPDATE action_items SET status = ?, note = ?, updated_at = ?, snoozed_until = ? WHERE id = ?
+        ''', (status, next_note, now.isoformat(), snoozed_until, item_id))
+        if note_changed:
+            _record_note_change(conn, item_id, previous['note'], next_note, now)
+        if status_changed:
+            record_activity(conn, item_id, 'status_changed', now, from_status=previous['status'],
+                            to_status=status, reason='user', snoozed_until=snoozed_until)
+        elif review_changed:
+            record_activity(conn, item_id, 'review_rescheduled', now,
+                            previous_review_time=previous['snoozed_until'], snoozed_until=snoozed_until)
+        return True

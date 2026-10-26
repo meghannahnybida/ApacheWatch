@@ -19,6 +19,7 @@ from .metrics import collect_metrics, collect_monitoring_health
 from .traffic import analyze_access_logs, analyze_block_recommendations
 from .settings import get_thresholds, save_thresholds
 from .log_search import LogChangedError, search_log
+from .activity import get_action_activity
 
 web = Blueprint("web", __name__)
 
@@ -318,6 +319,21 @@ def api_update_action_item(item_id):
     result = {"ok": True, "id": item_id}
     if "status" in payload:
         result["status"] = status
+    return jsonify(result)
+
+
+@web.route('/api/action-items/<int:item_id>/activity')
+def api_action_activity(item_id):
+    """Read one finding's saved activity without running another monitoring scan."""
+    try:
+        limit = int(request.args.get('limit', 10))
+        before = request.args.get('before')
+        before = int(before) if before is not None else None
+        result = get_action_activity(current_app.config['APACHEWATCH']['database'], item_id, limit, before)
+    except ValueError as error:
+        return jsonify({'error': str(error)}), 400
+    if result is None:
+        return jsonify({'error': 'action item not found'}), 404
     return jsonify(result)
 
 

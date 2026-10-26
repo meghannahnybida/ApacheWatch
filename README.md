@@ -89,6 +89,7 @@ web:
 - `GET /api/block-recommendations` - Advisory IP/range recommendations with evidence and proposed Apache/UFW rules
 - `GET /api/action-items?status=open` - Unified alert, recurring-error, and traffic-threat inbox
 - `PATCH /api/action-items/<id>` - Save a note, acknowledge, snooze, resolve, dismiss, or reopen a finding
+- `GET /api/action-items/<id>/activity?limit=10&before=<event_id>` - Saved activity and note versions, latest first; use `next_before` for earlier events
 - `GET /api/traffic-chart?hours=24` - Traffic chart data (JSON, default 24 hours)
 - `GET /api/alerts` - Recent local alerts saved in SQLite
 - `GET /api/settings/thresholds` - Effective alert thresholds for this server
@@ -124,6 +125,7 @@ ApacheWatch/
 │   ├── alerts.py       # Threshold rules
 │   ├── settings.py     # Persistent threshold overrides
 │   ├── actions.py      # Action Center findings and workflow
+│   ├── activity.py     # Finding activity and saved note versions
 │   ├── guidance.py     # Finding explanations and investigation steps
 │   ├── database.py     # SQLite schema
 │   └── history.py      # Alert, metric, and traffic history
@@ -155,9 +157,13 @@ Threshold overrides and email preferences are stored in SQLite and survive resta
 
 In Action Center, **Review later** moves a finding out of Needs attention for 15 minutes, 1 hour, 4 hours, or 1 day. The Later queue shows when it will return; **Review now** brings it back sooner. Use **Mark in progress** while investigating and **Mark resolved** after addressing the issue.
 
-Finding details explain what triggered the finding, why it matters, and what to check next. Guidance uses the saved evidence and includes a shortcut to the relevant logs or dashboard view. Findings absent from the latest check are identified separately; a saved log sample may still contain entries from before a fix. Investigation guidance draws on Apache's documentation for [error logs](https://httpd.apache.org/docs/2.4/logs.html), [access rules](https://httpd.apache.org/docs/2.4/howto/access.html), and [upstream services](https://httpd.apache.org/docs/2.4/mod/mod_proxy.html).
+Findings open with a short summary, one **Next step**, and an automatically saved note. Expand **Details & guidance** for the impact, remaining checks, and saved evidence. **Review later** expands the scheduling controls. These sections start closed each time a finding is opened. Guidance uses the saved evidence and includes a shortcut to the relevant logs or dashboard view. Findings absent from the latest check are identified separately; a saved log sample may still contain entries from before a fix. Investigation guidance draws on Apache's documentation for [error logs](https://httpd.apache.org/docs/2.4/logs.html), [access rules](https://httpd.apache.org/docs/2.4/howto/access.html), and [upstream services](https://httpd.apache.org/docs/2.4/mod/mod_proxy.html).
 
 Finding notes save automatically as you type and when you close the dialog. The note field shows **Saved** after the server confirms the update. **Retry save** appears only if a save fails. Unsaved drafts are retained in the same browser so you can recover them after a refresh. Saving a note preserves the finding's status and scheduled review time.
+
+Expand **Activity** to load a finding's timeline. It records first detection, saved note changes, workflow decisions, changed review times, returns from Later, and changes in whether a finding is observed. **View saved note** expands a historical note version; clearing the current note preserves the previous version in activity. **Show earlier activity** loads older events, and **Refresh** checks for new events. Saving a note refreshes the timeline while it is expanded; opening a collapsed timeline loads the latest activity.
+
+Activity is stored in SQLite alongside each change, so the timeline and saved state stay consistent across restarts. Unchanged saves and repeated monitoring checks do not add duplicate events. New activity timestamps are stored in UTC and displayed in the browser's local time. Existing findings retain their known first-seen date plus a snapshot marked **Activity tracking started**; changes made before tracking began cannot be reconstructed.
 
 Log Explorer searches the entire currently configured error or access log, including entries older than the initial Lines selection. **Filters** expands date/time, exact client IP (IPv4 or IPv6), and URL/path controls. Text and URL searches are literal and case-insensitive; all selected filters apply together. Error level and HTTP response filters also work in Terminal. Dates use the local times printed in the log, including both endpoints; lines without a readable timestamp are excluded when a date filter is set.
 

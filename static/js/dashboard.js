@@ -480,6 +480,7 @@ document.getElementById('actionDialog').addEventListener('cancel', event => {
     reviewHelp.open = false;
     reviewHelp.querySelector('summary').focus();
 });
+const actionActivity = new window.ApacheWatchActivity();
 const actionNotes = new window.ApacheWatchNotes({
     field: document.getElementById('actionNote'),
     status: document.getElementById('actionNoteStatus'),
@@ -489,6 +490,7 @@ const actionNotes = new window.ApacheWatchNotes({
         const item = currentActionItems.find(candidate => candidate.id === id);
         if (item) item.note = note;
         if (selectedActionItem?.id === id) selectedActionItem.note = note;
+        actionActivity.refresh(id);
     }
 });
 
@@ -697,16 +699,19 @@ function renderActionEvidence(item) {
 function openActionDialog(item) {
     selectedActionItem = item;
     reviewHelp.open = false;
+    document.querySelectorAll('[data-finding-section]').forEach(section => section.open = false);
     document.getElementById('actionDialog').dataset.severity = item.severity;
     document.getElementById('actionDialogSource').textContent = actionSourceLabel(item.source);
     document.getElementById('actionDialogTitle').textContent = item.title;
     const guidance = item.guidance || {};
-    document.getElementById('actionDialogSummary').textContent = guidance.trigger || item.summary;
+    document.getElementById('actionDialogSummary').textContent = item.source === 'error' ? item.summary : guidance.trigger || item.summary;
     document.getElementById('actionDialogImpact').hidden = !guidance.impact;
     document.getElementById('actionImpactText').textContent = guidance.impact || '';
     const steps = document.getElementById('actionGuidanceSteps');
     steps.replaceChildren();
-    (guidance.steps || []).forEach(step => {
+    document.getElementById('actionNextStep').hidden = !guidance.steps?.length;
+    document.getElementById('actionNextStepText').textContent = guidance.steps?.[0] || '';
+    (guidance.steps || []).slice(1).forEach(step => {
         const line = document.createElement('li');
         line.textContent = step;
         steps.appendChild(line);
@@ -714,9 +719,9 @@ function openActionDialog(item) {
     document.getElementById('actionGuidance').hidden = !steps.children.length;
     const findingState = document.getElementById('actionFindingState');
     findingState.textContent = item.currently_observed === false
-        ? 'Not seen in the latest check. Confirm the current logs and metrics before deciding whether to resolve it.'
+        ? 'Not seen in the latest check.'
         : item.currently_observed && ['resolved', 'dismissed'].includes(item.status)
-            ? `Marked ${item.status}, but this pattern still appears in the latest sample. Check whether those are earlier entries or an ongoing issue.`
+            ? 'Still in the latest sample. Check whether these are older entries.'
             : '';
     findingState.hidden = !findingState.textContent;
     document.getElementById('actionDialogMeta').innerHTML = `
@@ -728,6 +733,7 @@ function openActionDialog(item) {
         : item.source === 'error' ? 'Recent evidence' : 'Threshold details';
     document.getElementById('actionDialogEvidence').innerHTML = renderActionEvidence(item);
     actionNotes.open(item);
+    actionActivity.open(item.id);
     document.getElementById('actionUpdateError').hidden = true;
     const reviewingLater = item.status === 'snoozed';
     document.getElementById('actionReviewLater').hidden = !isOpenAction(item) && !reviewingLater;
@@ -737,7 +743,7 @@ function openActionDialog(item) {
     const reviewStatus = document.getElementById('actionReviewStatus');
     reviewStatus.hidden = !reviewingLater || !item.snoozed_until;
     reviewStatus.textContent = reviewingLater && item.snoozed_until
-        ? `Returns to Needs attention ${formatIncidentTime(item.snoozed_until)}. Choose Review now to bring it back sooner.`
+        ? `Returns to Needs attention ${formatIncidentTime(item.snoozed_until)}.`
         : '';
     document.querySelector('[data-action-status="acknowledged"]').hidden = item.status !== 'new';
     document.querySelector('[data-action-status="new"]').hidden = isOpenAction(item);

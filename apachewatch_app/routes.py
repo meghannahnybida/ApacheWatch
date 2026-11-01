@@ -20,6 +20,7 @@ from .traffic import analyze_access_logs, analyze_block_recommendations
 from .settings import get_thresholds, save_thresholds
 from .log_search import LogChangedError, search_log
 from .activity import get_action_activity
+from .resource_history import get_resource_history
 
 web = Blueprint("web", __name__)
 
@@ -208,6 +209,26 @@ def api_access_stats():
     evaluate_and_save_current_alerts(config, access_stats=stats)
 
     return jsonify(stats)
+
+
+@web.route('/api/resource-history')
+def api_resource_history():
+    """Read aggregated system-resource history without collecting new samples."""
+    config = current_app.config['APACHEWATCH']
+    resource = request.args.get('resource', 'cpu')
+    threshold = get_thresholds(config).get('disk_percent') if resource == 'disk' else None
+    try:
+        threshold = float(threshold) if threshold is not None else None
+    except (TypeError, ValueError):
+        threshold = None
+    try:
+        data = get_resource_history(config['database'], resource, request.args.get('hours', '24'),
+                                    threshold=threshold)
+    except ValueError as error:
+        return jsonify({'error': str(error)}), 400
+    if data['threshold'] and data['threshold']['kind'] == 'alert':
+        data['threshold']['enabled'] = config['alerts'].get('enabled', True)
+    return jsonify(data)
 
 
 @web.route("/api/access-logs")

@@ -82,6 +82,7 @@ web:
 - `GET /api/logs?level=error` - Recent log entries (JSON, optional level filter)
 - `GET /api/incidents?level=error&limit=20` - Repeated errors grouped into incidents with timestamps, affected URLs, and trend data
 - `GET /api/history` - Metrics history (JSON)
+- `GET /api/resource-history?resource=cpu&hours=24` - CPU, memory, or disk chart points and latest/average/peak readings; ranges: 1, 24, 168, 720 hours, or `all`
 - `GET /api/access-stats` - Access log analytics (top IPs, pages, status codes)
 - `GET /api/access-logs?limit=100` - Recent parsed access-log requests for interactive inspection
 - `GET /api/log-tail?source=error&limit=100` - Original recent error or access log lines in file order (up to 1,000 lines)
@@ -119,6 +120,7 @@ ApacheWatch/
 │   ├── cli.py          # Web, worker, and test-email startup
 │   ├── monitoring.py   # Background checks
 │   ├── metrics.py      # System metrics and source health
+│   ├── resource_history.py # Time-filtered resource charts and summaries
 │   ├── logs.py         # Log parsing and error grouping
 │   ├── log_search.py   # Filtered log search and snapshot pagination
 │   ├── traffic.py      # Traffic analytics and security findings
@@ -154,6 +156,12 @@ Run the test suite with `python -m unittest discover -s tests -v`.
 Settings has **General**, **Alerts**, and **Email** tabs. In Alerts, edit the five existing thresholds and choose **Save thresholds**. Changes apply to web requests and background checks without a restart. Email lets you add or remove up to 20 recipients, including while delivery is off. Recipient changes preserve the email on/off setting.
 
 Threshold overrides and email preferences are stored in SQLite and survive restarts; `config.yaml` provides the initial values. Appearance and dashboard refresh remain browser preferences. Saved threshold overrides take precedence over the corresponding values in `config.yaml`.
+
+Each system-resource card has a **Details** link. It opens a spacious view with a prominent latest recorded value, supporting average and peak readings, and a usage status for the selected range: Last hour, Last 24 hours, Last 7 days, Last 30 days, or All available history. There are no resource graphs. **Refresh** reads newly saved samples; opening details does not collect or invent readings.
+
+One sentence reports how many original readings reached the current saved disk alert threshold or the 90% CPU/memory high-usage guide. The guides do not create alerts. This compares recorded readings against the current threshold, rather than counting past alerts or estimating time spent above it. Disabled disk alerts are identified as off. Missing data is shown as unavailable rather than zero usage.
+
+Resource summaries use all valid readings in the selected window, including brief peaks. The read-only `/api/resource-history` endpoint also retains aggregated points for programmatic use, with at most roughly 400 points. Stored server-local or offset-bearing timestamps are normalized to UTC; details display the viewer's local time. The existing raw `/api/history` endpoint remains available.
 
 In Action Center, **Review later** moves a finding out of Needs attention for 15 minutes, 1 hour, 4 hours, or 1 day. The Later queue shows when it will return; **Review now** brings it back sooner. Use **Mark in progress** while investigating and **Mark resolved** after addressing the issue.
 

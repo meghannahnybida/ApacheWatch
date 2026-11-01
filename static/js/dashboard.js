@@ -1069,6 +1069,7 @@ fetchActionItems();
 const charts = {};
 const chartConfigs = {};
 const chartKeys = ['traffic', 'status', 'visitors'];
+const resourceDetails = new window.ApacheWatchResourceDetails();
 const analyticsTimeSelect = document.getElementById('analyticsTimeRange');
 const savedAnalyticsRange = localStorage.getItem('analyticsTimeRange') || localStorage.getItem('trafficTimeRange');
 if (Array.from(analyticsTimeSelect.options).some(option => option.value === savedAnalyticsRange)) {

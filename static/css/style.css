@@ -170,9 +170,10 @@ h2 { color: var(--ink); font-size: 16px; font-weight: 650; letter-spacing: -.015
 .metrics-grid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 12px; }
 .metric-card { padding: 20px; }
 .metric-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
-.metric-heading h3 { font-size: 13px; font-weight: 600; }
+.metric-heading h3 { font-size: 18px; font-weight: 650; }
 .metric-heading span { color: var(--muted); font-size: 11px; }
 .metric-card .value { margin-top: 16px; font-size: 30px; line-height: 1.2; font-weight: 650; letter-spacing: -.03em; }
+.metric-details-button { margin-top: 12px; font-size: 11px; }
 .bar { height: 4px; margin-top: 15px; overflow: hidden; border-radius: 4px; background: var(--surface-hover); }
 .bar-fill { height: 100%; border-radius: 4px; transition: width .2s; }
 .bar-fill.good { background: #329879; }
@@ -358,10 +359,50 @@ h2 { color: var(--ink); font-size: 16px; font-weight: 650; letter-spacing: -.015
 .analytics-note { margin-top: 16px; color: var(--muted); font-size: 12px; }
 .chart-modal { position: fixed; inset: 0; width: min(1100px, calc(100vw - 32px)); height: min(760px, calc(100dvh - 32px)); margin: auto; padding: 0; overflow: hidden; border: 0; border-radius: var(--radius); background: var(--surface); }
 .chart-modal[open] { display: flex; flex-direction: column; }
-.chart-modal::backdrop, .action-dialog::backdrop { background: rgba(20,31,48,.5); }
+.chart-modal::backdrop, .resource-details-dialog::backdrop, .action-dialog::backdrop { background: rgba(20,31,48,.5); }
 .chart-modal-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 20px; border-bottom: 1px solid var(--line); }
 .chart-modal-close { width: 32px; height: 32px; border: 0; border-radius: 6px; background: transparent; color: var(--muted); font-size: 24px; }
 .chart-modal-body { position: relative; flex: 1; min-height: 0; margin: 20px; }
+.resource-details-dialog { position: fixed; inset: 0; width: min(820px, calc(100vw - 40px)); max-height: calc(100dvh - 40px); margin: auto; padding: 0; overflow: auto; border: 1px solid var(--line); border-radius: 18px; background: var(--surface); color: var(--ink); box-shadow: 0 24px 80px rgba(0,0,0,.18); }
+.resource-details-header { padding: 24px 28px; }
+.resource-details-heading { display: flex; align-items: center; gap: 14px; }
+.resource-details-heading h2 { font-size: 18px; }
+.resource-details-icon { display: grid; place-items: center; width: 44px; height: 44px; flex-shrink: 0; border-radius: 12px; background: var(--accent-soft); color: var(--accent-text); }
+.resource-details-icon svg { width: 25px; height: 25px; }
+.resource-details-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 22px 28px; }
+.resource-details-toolbar .select-field { display: flex; align-items: center; gap: 12px; color: var(--muted); font-size: 12px; }
+.resource-details-content { padding: 0 28px; }
+.resource-details-hero { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); align-items: center; gap: 28px; padding: 32px; border: 1px solid var(--line); border-radius: 14px; background: linear-gradient(120deg, var(--accent-soft), var(--surface-subtle) 75%); }
+.resource-details-label { color: var(--muted); font-size: 13px; font-weight: 500; }
+.resource-details-value { margin-top: 8px; color: var(--ink); font-size: 40px; font-weight: 650; letter-spacing: -.035em; line-height: 1.2; font-variant-numeric: tabular-nums; }
+.resource-details-description { margin-top: 8px; color: var(--muted); font-size: 13px; }
+.resource-details-summary { display: grid; gap: 24px; padding-left: 28px; border-left: 1px solid var(--line-strong); }
+.resource-details-summary > div { display: flex; flex-direction: column; }
+.resource-details-summary dt { flex: 1; color: var(--muted); font-size: 12px; }
+.resource-details-summary dd { margin-top: 4px; color: var(--ink); font-size: 24px; font-weight: 600; letter-spacing: -.025em; line-height: 1.25; }
+.resource-details-finding { display: flex; align-items: flex-start; gap: 14px; margin-top: 20px; padding: 18px 20px; border: 1px solid var(--line); border-radius: 12px; }
+.resource-details-finding-icon { display: grid; place-items: center; width: 32px; height: 32px; flex-shrink: 0; border-radius: 50%; background: var(--success-soft); color: var(--success); }
+.resource-details-finding-icon svg { width: 21px; height: 21px; }
+.resource-details-finding[data-tone="high"] .resource-details-finding-icon { background: var(--warning-soft); color: var(--warning); }
+.resource-details-finding h3 { color: var(--ink); font-size: 14px; font-weight: 600; }
+.resource-details-finding p { margin-top: 4px; color: var(--muted); font-size: 12px; line-height: 1.6; }
+.resource-details-footer { padding: 20px 28px 24px; color: var(--muted); font-size: 12px; line-height: 1.6; }
+.resource-details-empty { padding: 32px 28px; color: var(--muted); font-size: 14px; line-height: 1.5; }
+@media (max-width: 600px) {
+    .resource-details-dialog { width: calc(100vw - 24px); max-height: calc(100dvh - 24px); border-radius: 14px; }
+    .resource-details-header { padding: 20px; }
+    .resource-details-heading { gap: 10px; }
+    .resource-details-heading h2 { font-size: 18px; }
+    .resource-details-toolbar { padding: 20px; }
+    .resource-details-toolbar .select-field { align-items: flex-start; flex-direction: column; gap: 6px; }
+    .resource-details-content { padding: 0 20px; }
+    .resource-details-hero { grid-template-columns: minmax(0, 1fr); gap: 24px; padding: 24px 20px; }
+    .resource-details-value { font-size: 32px; }
+    .resource-details-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; padding: 20px 0 0; border-left: 0; border-top: 1px solid var(--line); }
+    .resource-details-summary dd { font-size: 22px; }
+    .resource-details-finding { gap: 10px; padding: 16px; }
+    .resource-details-footer { padding: 20px; }
+}
 
 /* Action Center */
 .nav-count {
@@ -745,7 +786,7 @@ h2 { color: var(--ink); font-size: 16px; font-weight: 650; letter-spacing: -.015
     .refresh-controls { gap: 6px; font-size: 10px; }
     .view-description { font-size: 12px; }
     .metric-card { padding: 13px 11px; }
-    .metric-heading h3 { font-size: 12px; }
+    .metric-heading h3 { font-size: 16px; }
     .metric-heading span { font-size: 9px; }
     .metric-card .value { margin-top: 12px; font-size: 24px; }
     .metrics-grid { gap: 7px; }

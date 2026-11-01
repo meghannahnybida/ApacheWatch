@@ -63,16 +63,19 @@
                         <div class="metric-heading"><h3>CPU</h3><span>Processor load</span></div>
                         <div class="value" id="cpu-value">{{ metrics.cpu_percent }}%</div>
                         <div class="bar"><div class="bar-fill {{ 'bad' if metrics.cpu_percent > 90 else 'warn' if metrics.cpu_percent > 70 else 'good' }}" id="cpu-bar" style="width: {{ metrics.cpu_percent }}%"></div></div>
+                        <button type="button" class="text-button metric-details-button" data-resource-details="cpu" aria-label="View CPU details" aria-haspopup="dialog" aria-controls="resourceDetailsDialog">Details</button>
                     </article>
                     <article class="card metric-card">
                         <div class="metric-heading"><h3>Memory</h3><span id="mem-sub">{{ metrics.memory.used_gb }} / {{ metrics.memory.total_gb }} GB</span></div>
                         <div class="value" id="mem-value">{{ metrics.memory.percent }}%</div>
                         <div class="bar"><div class="bar-fill {{ 'bad' if metrics.memory.percent > 90 else 'warn' if metrics.memory.percent > 70 else 'good' }}" id="mem-bar" style="width: {{ metrics.memory.percent }}%"></div></div>
+                        <button type="button" class="text-button metric-details-button" data-resource-details="memory" aria-label="View memory details" aria-haspopup="dialog" aria-controls="resourceDetailsDialog">Details</button>
                     </article>
                     <article class="card metric-card">
                         <div class="metric-heading"><h3>Disk</h3><span id="disk-sub">{{ metrics.disk.used_gb }} / {{ metrics.disk.total_gb }} GB</span></div>
                         <div class="value" id="disk-value">{{ metrics.disk.percent }}%</div>
                         <div class="bar"><div class="bar-fill {{ 'bad' if metrics.disk.percent > 90 else 'warn' if metrics.disk.percent > 70 else 'good' }}" id="disk-bar" style="width: {{ metrics.disk.percent }}%"></div></div>
+                        <button type="button" class="text-button metric-details-button" data-resource-details="disk" aria-label="View disk details" aria-haspopup="dialog" aria-controls="resourceDetailsDialog">Details</button>
                     </article>
                 </div>
 
@@ -430,6 +433,43 @@
         <div id="logSourceStatus" class="log-problem-body"></div>
     </dialog>
 
+    <dialog id="resourceDetailsDialog" class="resource-details-dialog" aria-labelledby="resourceDetailsTitle">
+        <div class="chart-modal-header resource-details-header">
+            <div class="resource-details-heading">
+                <span class="resource-details-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path id="resourceDetailsIconPath" d="M7 7h10v10H7zM10 10h4v4h-4zM9 3v4m6-4v4M9 17v4m6-4v4M3 9h4m-4 6h4m10-6h4m-4 6h4"/></svg></span>
+                <h2 id="resourceDetailsTitle">Resource details</h2>
+            </div>
+            <button type="button" class="chart-modal-close" id="closeResourceDetails" aria-label="Close resource details">×</button>
+        </div>
+        <div class="resource-details-toolbar">
+            <label class="select-field" for="resourceDetailsRange">Time range
+                <select id="resourceDetailsRange"><option value="1">Last hour</option><option value="24" selected>Last 24 hours</option><option value="168">Last 7 days</option><option value="720">Last 30 days</option><option value="all">All available history</option></select>
+            </label>
+            <button type="button" class="text-button" id="refreshResourceDetails">Refresh</button>
+        </div>
+        <div class="resource-details-content" id="resourceDetailsReadings" hidden>
+            <div class="resource-details-hero">
+                <div class="resource-details-primary">
+                    <span class="resource-details-label">Latest recorded</span>
+                    <p class="resource-details-value" id="resourceDetailsLatest">—</p>
+                    <p class="resource-details-description" id="resourceDetailsDescription">System usage</p>
+                </div>
+                <dl class="resource-details-summary">
+                    <div><dt>Average usage</dt><dd id="resourceDetailsAverage">—</dd></div>
+                    <div><dt>Highest recorded</dt><dd id="resourceDetailsPeak">—</dd></div>
+                </dl>
+            </div>
+            <div class="resource-details-finding" id="resourceDetailsFinding" role="status" hidden>
+                <span class="resource-details-finding-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path id="resourceDetailsFindingIcon" d="m5 12 4 4L19 6"/></svg></span>
+                <div><h3 id="resourceDetailsFindingTitle">Recorded usage</h3><p id="resourceDetailsInsight"></p></div>
+            </div>
+        </div>
+        <p class="resource-details-empty" id="resourceDetailsEmpty" role="status">Loading readings…</p>
+        <div class="resource-details-footer">
+            <p id="resourceDetailsStatus" role="status" aria-live="polite"></p>
+        </div>
+    </dialog>
+
     <dialog id="chart-modal" class="chart-modal" aria-labelledby="modal-chart-title">
         <div class="chart-modal-header">
             <h2 id="modal-chart-title">Chart</h2>
@@ -440,6 +480,7 @@
     <script src="{{ asset_url('js/action-notes.js') }}" defer></script>
     <script src="{{ asset_url('js/action-activity.js') }}" defer></script>
     <script src="{{ asset_url('js/log-search.js') }}" defer></script>
+    <script src="{{ asset_url('js/resource-details.js') }}" defer></script>
     <script src="{{ asset_url('js/dashboard.js') }}" defer></script>
     <script src="{{ asset_url('js/settings.js') }}" defer></script>
 </body>

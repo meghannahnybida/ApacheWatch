@@ -26,7 +26,11 @@ let currentAccessLogs = [];
 let currentAccessSummary = {};
 let activeAccessStatus = 'all';
 const initialErrorLevel = new URLSearchParams(window.location.search).get('level') || '';
-let activeErrorLevel = Array.from(logErrorLevel.options).some(option => option.value === initialErrorLevel) ? initialErrorLevel : '';
+const groupedErrorLevel = /^(emerg|alert|crit|critical|error)$/.test(initialErrorLevel) ? 'errors'
+    : /^(notice|info)$/.test(initialErrorLevel) ? 'information'
+    : /^(debug|trace[1-8])$/.test(initialErrorLevel) ? 'diagnostics'
+    : initialErrorLevel === 'warning' ? 'warn' : initialErrorLevel;
+let activeErrorLevel = Array.from(logErrorLevel.options).some(option => option.value === groupedErrorLevel) ? groupedErrorLevel : '';
 const savedLogView = localStorage.getItem('logView');
 let activeLogFormat = localStorage.getItem('logFormat') === 'terminal' || (!localStorage.getItem('logFormat') && savedLogView === 'raw') ? 'terminal' : 'formatted';
 let activeLogSource = localStorage.getItem('logSource') === 'access' || savedLogView === 'access' ? 'access' : 'error';
@@ -63,6 +67,35 @@ const logBrowser = new window.ApacheWatchLogSearch({
     },
     onBrowse: () => stopTailMode(),
 });
+const terminalTools = new window.ApacheWatchTerminalTools({
+    viewer: terminal,
+    getFilename: () => terminalFilename,
+    onSearch: (query, immediate) => {
+        logSearch.value = query;
+        updateLogFilterCount();
+        if (immediate) fetchActiveLogData();
+        else logBrowser.schedule();
+    },
+    onToggleLive: () => liveLogButton.click(),
+    onTail: ({ source, limit, live }) => {
+        stopTailMode();
+        clearLogFilters();
+        if (source) setLogSource(source, false);
+        if (limit) {
+            logLimit.value = limit;
+            localStorage.setItem('logLimit', limit);
+        }
+        setLogView('raw');
+        terminal.setFollow(true);
+        if (live) startTailMode(true);
+        else fetchActiveLogData();
+    },
+    onClear: () => {
+        if (logBrowser.loading) throw new Error('Wait for the current log read to finish, then try clear again.');
+        terminal.clear();
+        filterAndDisplayRawLogs();
+    },
+});
 
 function readJSON(response) {
     if (!response.ok) throw new Error(`Request failed (${response.status})`);
@@ -84,6 +117,7 @@ const viewMeta = {
 
 function showView(viewName) {
     const selected = viewMeta[viewName] ? viewName : 'overview';
+    if (selected !== 'logs' && terminalTools.dialog.open) terminalTools.dialog.close();
     document.querySelectorAll('[data-view]').forEach(view => {
         const active = view.dataset.view === selected;
         view.hidden = !active;
@@ -165,6 +199,7 @@ function updateLogFilterCount() {
     document.getElementById('logFilterCount').hidden = !count;
     document.getElementById('logFilterCount').textContent = count;
     document.getElementById('clearLogSearch').hidden = !hasLogFilters();
+    terminalTools.syncSearch(logSearch.value);
 }
 
 function hasLogFilters() {
@@ -314,12 +349,12 @@ function fetchActiveLogData() {
     return logBrowser.search();
 }
 
-function startTailMode() {
+function startTailMode(refresh = false) {
     const generation = ++tailGeneration;
     liveRefreshEnabled = true;
     localStorage.setItem('tailMode', 'true');
     if (tailInterval) clearTimeout(tailInterval);
-    if (logBrowser.streamCursor && logBrowser.index === 0 && !logBrowser.loading) {
+    if (!refresh && logBrowser.streamCursor && logBrowser.index === 0 && !logBrowser.loading) {
         pollTail(generation);
     } else {
         fetchActiveLogData();
@@ -351,6 +386,9 @@ function updateLiveLogButton() {
     liveLogButton.classList.toggle('watching', liveRefreshEnabled);
     liveLogButton.setAttribute('aria-pressed', liveRefreshEnabled ? 'true' : 'false');
     liveLogButton.querySelector('.live-log-label').textContent = liveRefreshEnabled ? 'Pause live' : 'Watch live';
+    const terminalLive = document.getElementById('terminalLive');
+    terminalLive.textContent = liveRefreshEnabled ? 'Pause live' : 'Watch live';
+    terminalLive.setAttribute('aria-pressed', String(liveRefreshEnabled));
     if (activeLogView === 'raw') filterAndDisplayRawLogs();
 }
 
@@ -392,12 +430,13 @@ function filterAndDisplayLogs() {
 function filterAndDisplayRawLogs() {
     const search = hasLogFilters();
     terminalMessage.hidden = terminal.rows.size > 0 && !terminalError;
-    terminalMessage.textContent = terminalError || (search ? 'No lines match these filters.' : 'No lines in this log yet.');
+    terminalMessage.textContent = terminalError || (terminal.cleared ? 'Output cleared from this view. Refresh to reload saved lines.'
+        : search ? 'No lines match these filters.' : 'No lines in this log yet.');
     terminalMessage.classList.toggle('raw-log-error', Boolean(terminalError));
     document.getElementById('terminalFile').textContent = terminalFilename;
     document.getElementById('terminalCommand').textContent = search || logBrowser.index > 0
         ? `# ${search ? 'Search results' : 'Log history'} · page ${Math.max(1, logBrowser.index + 1)} · ${terminalFilename}`
-        : `tail -n ${logLimit.value}${liveRefreshEnabled ? ' -f' : ''} -- ${terminalFilename}`;
+        : `Latest ${logLimit.value} lines · ${terminalFilename}${liveRefreshEnabled ? ' · watching live' : ''}`;
     rawLogEntries.classList.toggle('watching', liveRefreshEnabled);
     terminal.live = liveRefreshEnabled;
     terminal.updateStatus();

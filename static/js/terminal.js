@@ -25,25 +25,72 @@ window.ApacheWatchTerminal = class {
         this.updateStatus();
     }
 
+    tokens(raw) {
+        const spans = [];
+        const access = raw.match(/^(\S+)(\s+\S+\s+\S+\s+)(\[[^\]]+\])(\s+")([A-Z]+)(\s+)(\S+)(\s+HTTP\/[\d.]+"\s+)(\d{3})(?=\s)/);
+        if (access) {
+            const status = Number(access[9]);
+            const kinds = { 1: 'ip', 3: 'time', 5: 'method', 7: 'path',
+                9: status >= 500 ? 'error' : status >= 400 ? 'warning' : status >= 300 ? 'info' : 'success' };
+            let start = 0;
+            for (let i = 1; i < access.length; i++) {
+                if (kinds[i]) spans.push({ start, end: start + access[i].length, kind: kinds[i] });
+                start += access[i].length;
+            }
+        } else {
+            const error = raw.match(/^(\[[^\]]+\])(\s+)(\[(?:[\w.-]+:)?(emerg|alert|crit|error|warn(?:ing)?|notice|info|debug|trace[1-8])\])/i);
+            if (error) {
+                spans.push({ start: 0, end: error[1].length, kind: 'time' });
+                const level = error[4].toLowerCase();
+                const kind = /^(emerg|alert|crit|error)$/.test(level) ? 'error' : level.startsWith('warn') ? 'warning' : 'info';
+                spans.push({ start: error[1].length + error[2].length, end: error[0].length, kind });
+                const client = /\[(?:client|remote)\s+(?:\[[^\]]+\](?::\d+)?|[^\]]+)\]/i.exec(raw);
+                if (client) spans.push({ start: client.index, end: client.index + client[0].length, kind: 'ip' });
+            }
+        }
+        return spans;
+    }
+
     textNode(raw) {
         const node = document.createElement('span');
         node.className = 'terminal-line-text';
         const terms = [...new Set(this.terms.filter(Boolean))].sort((a, b) => b.length - a.length);
-        if (!terms.length) {
+        const tokens = this.tokens(raw);
+        const matches = [];
+        if (terms.length) {
+            const expression = new RegExp(terms.map(term => term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|'), 'giu');
+            for (const match of raw.matchAll(expression)) {
+                matches.push({ start: match.index, end: match.index + match[0].length });
+                if (matches.length === 500) break;
+            }
+        }
+        if (!tokens.length && !matches.length) {
             node.textContent = raw;
             return node;
         }
-        const expression = new RegExp(terms.map(term => term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|'), 'giu');
-        let position = 0;
-        for (const match of raw.matchAll(expression)) {
-            node.append(document.createTextNode(raw.slice(position, match.index)));
-            const mark = document.createElement('mark');
-            mark.textContent = match[0];
-            node.append(mark);
-            position = match.index + match[0].length;
+        const points = [...new Set([0, raw.length, ...tokens.flatMap(span => [span.start, span.end]),
+            ...matches.flatMap(span => [span.start, span.end])])].sort((a, b) => a - b);
+        let tokenIndex = 0, matchIndex = 0;
+        for (let i = 0; i < points.length - 1; i++) {
+            const start = points[i], end = points[i + 1];
+            while (tokens[tokenIndex]?.end <= start) tokenIndex++;
+            while (matches[matchIndex]?.end <= start) matchIndex++;
+            const highlighted = matches[matchIndex]?.start <= start;
+            const token = tokens[tokenIndex]?.start <= start ? tokens[tokenIndex] : null;
+            if (!highlighted && !token) node.append(document.createTextNode(raw.slice(start, end)));
+            else {
+                const span = document.createElement(highlighted ? 'mark' : 'span');
+                if (!highlighted) span.className = `terminal-token-${token.kind}`;
+                span.textContent = raw.slice(start, end);
+                node.append(span);
+            }
         }
-        node.append(document.createTextNode(raw.slice(position)));
         return node;
+    }
+
+    clear() {
+        this.show({ terminal_lines: [] }, { terms: this.terms, filtered: this.filtered, live: this.live });
+        this.cleared = true;
     }
 
     show(data, { append = false, terms = [], filtered = false, live = false } = {}) {
@@ -55,6 +102,7 @@ window.ApacheWatchTerminal = class {
             this.output.replaceChildren();
             this.characters = this.unread = 0;
             this.trimmed = false;
+            this.cleared = false;
             this.terms = terms;
             this.filtered = filtered;
         }
@@ -103,7 +151,8 @@ window.ApacheWatchTerminal = class {
             this.trimmed = true;
         }
         if (append && !this.following) this.unread += added;
-        this.output.hidden = !this.rows.size;
+        if (this.rows.size) this.cleared = false;
+        this.output.hidden = false;
         this.output.scrollTop = this.following ? this.output.scrollHeight : Math.max(0, scrollTop - removedHeight);
         this.updateStatus();
     }

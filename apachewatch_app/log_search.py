@@ -18,6 +18,11 @@ MAX_SCAN_BYTES = 8 * 1024 * 1024
 MAX_LINE_BYTES = 1024 * 1024
 LEVELS = {'emerg', 'alert', 'crit', 'error', 'warn', 'notice', 'info', 'debug',
           'unknown', *(f'trace{n}' for n in range(1, 9))}
+LEVEL_GROUPS = {
+    'errors': {'emerg', 'alert', 'crit', 'error'},
+    'information': {'notice', 'info'},
+    'diagnostics': {'debug', *(f'trace{n}' for n in range(1, 9))},
+}
 CLIENT = re.compile(r'\[(?:client|remote)\s+(\[[^\]]+\](?::\d+)?|[^\]]+)\]', re.IGNORECASE)
 
 
@@ -53,7 +58,7 @@ def _filters(params, source):
         raise ValueError('The start date must be before the end date.')
     result['level'] = _level(result['level'])
     result['status'] = result['status'] or 'all'
-    if result['level'] and result['level'] not in LEVELS:
+    if result['level'] and result['level'] not in LEVELS and result['level'] not in LEVEL_GROUPS:
         raise ValueError('Choose a valid error level.')
     if result['status'] not in {'all', '2', '3', '4', '5'}:
         raise ValueError('Choose a valid response status.')
@@ -97,8 +102,10 @@ def _matches(entry, raw, filters, source):
         urls = [entry['path']] if source == 'access' and entry.get('path') else extract_affected_urls(entry.get('message', ''))
         if not any(filters['url'] in url.casefold() for url in urls):
             return False
-    if filters['level'] and _level(entry.get('level', 'unknown')) != filters['level']:
-        return False
+    if filters['level']:
+        levels = LEVEL_GROUPS.get(filters['level'], {filters['level']})
+        if _level(entry.get('level', 'unknown')) not in levels:
+            return False
     if filters['status'] != 'all':
         status = entry.get('status')
         if not isinstance(status, int) or str(status // 100) != filters['status']:

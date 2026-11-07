@@ -170,11 +170,8 @@
                     </details>
                     <label class="log-level-filter" id="errorLogFilters" for="logErrorLevel">Level
                         <select id="logErrorLevel">
-                            <option value="">All levels</option><option value="error">Error</option><option value="warn">Warning</option>
-                            <option value="crit">Critical</option><option value="alert">Alert</option><option value="emerg">Emergency</option>
-                            <option value="notice">Notice</option><option value="info">Info</option><option value="debug">Debug</option>
-                            {% for n in range(1, 9) %}<option value="trace{{ n }}">Trace {{ n }}</option>{% endfor %}
-                            <option value="unknown">Unknown</option>
+                            <option value="">All levels</option><option value="errors">Errors</option><option value="warn">Warnings</option>
+                            <option value="information">Info</option><option value="diagnostics">Debug</option>
                         </select>
                     </label>
                     <div class="access-summary" id="accessSummary" hidden></div>
@@ -194,10 +191,30 @@
                         <div id="logEntries"><div class="log-entry">Finding repeated issues...</div></div>
                         <div id="rawLogEntries" class="raw-log" hidden>
                             <div class="terminal-header"><span class="terminal-icon" aria-hidden="true">&gt;_</span><span id="terminalFile">error.log</span><button type="button" class="terminal-follow" id="terminalFollow" aria-pressed="true">Follow output</button></div>
-                            <div class="terminal-command-line" aria-label="Current log view"><span class="terminal-prompt" aria-hidden="true">$</span><code id="terminalCommand">tail -n 20 -- error.log</code></div>
-                            <div id="terminalOutput" class="terminal-output" tabindex="0" role="region" aria-label="Raw log output"></div>
-                            <button type="button" class="terminal-jump" id="terminalJump" hidden>Jump to latest</button>
-                            <p id="terminalMessage" class="raw-log-empty" role="status" hidden></p>
+                            <div class="terminal-tools" role="group" aria-label="Terminal tools">
+                                <button type="button" id="terminalLive" aria-pressed="false" title="Pause or resume live collection (Space when output is focused)">Watch live</button>
+                                <button type="button" id="terminalFindToggle" aria-expanded="false" aria-controls="terminalFindForm" title="Find in log (/)">Find</button>
+                                <button type="button" id="terminalWrap" aria-pressed="false" title="Wrap long lines (W)">Wrap lines</button>
+                                <button type="button" id="terminalCopy" title="Copy displayed log lines, without context or controls">Copy output</button>
+                                <button type="button" id="terminalDownload" title="Download displayed log lines, without context or controls">Download</button>
+                                <button type="button" id="terminalCommandsToggle" aria-expanded="true" aria-controls="terminalCommandForm" title="Show or hide viewer commands (:)">Commands</button>
+                                <button type="button" id="terminalShortcuts">Shortcuts</button>
+                                <button type="button" id="terminalFullscreen" aria-pressed="false" title="Expand terminal (F)">Fullscreen</button>
+                            </div>
+                            <form id="terminalFindForm" class="terminal-input-row" hidden role="search" aria-label="Find in terminal log">
+                                <label for="terminalFindInput">Find</label><input id="terminalFindInput" type="search" placeholder="Search this log" maxlength="1000" autocomplete="off" spellcheck="false"><button type="submit">Search</button><button type="button" id="terminalFindClear">Clear</button>
+                            </form>
+                            <div class="terminal-command-line" aria-label="Current log view"><span id="terminalCommand">Latest 20 lines · error.log</span></div>
+                            <form id="terminalCommandForm" class="terminal-input-row terminal-command-form" aria-label="Log viewer command">
+                                <label for="terminalCommandInput" class="terminal-prompt">&gt;</label><input id="terminalCommandInput" type="text" placeholder="Enter a command, e.g. tail access -n 100 -f" maxlength="1200" autocomplete="off" autocapitalize="off" spellcheck="false" aria-describedby="terminalCommandHint"><button type="submit">Run</button>
+                                <small id="terminalCommandHint">Try tail access -n 100 -f, find /checkout, or help · ↑ / ↓ history · Esc to close</small>
+                            </form>
+                            <div class="terminal-viewport">
+                                <div id="terminalOutput" class="terminal-output" tabindex="0" role="region" aria-label="Raw log output"></div>
+                                <button type="button" class="terminal-jump" id="terminalJump" hidden>Jump to latest</button>
+                                <p id="terminalMessage" class="raw-log-empty" role="status" hidden></p>
+                            </div>
+                            <div id="terminalNotice" class="terminal-notice" hidden><button type="button" id="terminalNoticeDismiss" aria-label="Dismiss terminal message">×</button><div id="terminalNoticeText" role="status"></div></div>
                             <div class="terminal-footer"><span class="terminal-state-dot" aria-hidden="true"></span><span id="terminalStatus" role="status">Loading…</span><span class="terminal-mode-label">Log viewer</span></div>
                         </div>
                         <div id="accessLogEntries" class="access-log" hidden><div class="log-entry">Loading recent requests...</div></div>
@@ -478,10 +495,12 @@
         </div>
         <div class="chart-modal-body"><canvas id="modalChart" role="img" aria-label="Expanded traffic chart"></canvas></div>
     </dialog>
+    <dialog id="terminalFullscreenDialog" class="terminal-fullscreen-dialog" aria-label="Fullscreen log terminal"></dialog>
     <script src="{{ asset_url('js/action-notes.js') }}" defer></script>
     <script src="{{ asset_url('js/action-activity.js') }}" defer></script>
     <script src="{{ asset_url('js/log-search.js') }}" defer></script>
     <script src="{{ asset_url('js/terminal.js') }}" defer></script>
+    <script src="{{ asset_url('js/terminal-tools.js') }}" defer></script>
     <script src="{{ asset_url('js/resource-details.js') }}" defer></script>
     <script src="{{ asset_url('js/dashboard.js') }}" defer></script>
     <script src="{{ asset_url('js/settings.js') }}" defer></script>

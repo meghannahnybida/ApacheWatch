@@ -154,6 +154,7 @@ ApacheWatch/
 Start the app with `python apachewatch.py`, or use `apachewatch:app` as the WSGI entry point. Importing the app does not start monitoring. Routes read each app's settings from `app.config["APACHEWATCH"]`; collectors and finding builders receive configuration explicitly. `apachewatch_app.create_app(config_data=...)` creates an isolated app for tests or other deployments.
 
 Run the test suite with `python -m unittest discover -s tests -v`.
+Run viewer-command validation with `node --test tests/test_terminal_tools.cjs` (no npm dependencies).
 
 Settings has **General**, **Alerts**, and **Email** tabs. In Alerts, edit the five existing thresholds and choose **Save thresholds**. Changes apply to web requests and background checks without a restart. Email lets you add or remove up to 20 recipients, including while delivery is off. Recipient changes preserve the email on/off setting.
 
@@ -177,7 +178,17 @@ Activity is stored in SQLite alongside each change, so the timeline and saved st
 
 Log Explorer searches the entire currently configured error or access log, including entries older than the initial Lines selection. **Filters** expands date/time, exact client IP (IPv4 or IPv6), and URL/path controls. Text and URL searches are literal and case-insensitive; all selected filters apply together. Error level and HTTP response filters also work in Terminal. Dates use the local times printed in the log, including both endpoints; lines without a readable timestamp are excluded when a date filter is set.
 
+The Level dropdown has five choices: **All levels**, **Errors** (including critical, alert, and emergency), **Warnings**, **Info** (including notice), and **Debug** (including trace 1–8). All levels also includes unrecognized lines. Exact Apache levels remain available through the search API.
+
 Terminal highlights matching search text, URL text, and client IPs without changing the original log text. Filtered results have a **Context** button that expands up to three original lines before and after that match. Surrounding lines ignore the selected filters and stay within the search's file snapshot, so they may have different dates, IPs, or severity levels.
+
+Terminal colors distinguish timestamps, client addresses, error levels, request methods, and HTTP response statuses. **Wrap lines** remembers its setting in this browser. **Copy output** and **Download** export only the retained original log lines in file order, with a trailing newline; controls and expanded context are excluded. **Fullscreen** opens a focused view with the same controls, its own **Find** field, and continued live updates.
+
+The command input is visible above the output when Terminal opens, with example commands beneath it. The **Commands** button shows or hides it. The separate “Latest … lines” label describes the current view.
+
+With the terminal focused, `/` opens Find, `W` toggles wrapping, `F` toggles fullscreen, `:` opens Commands, and `?` shows shortcuts. With output focused, Space pauses/resumes live collection and Home/End move to the first/latest displayed line. Shortcuts leave typing and browser shortcuts alone. Escape closes search, commands, or a message first, then fullscreen.
+
+**Commands** offers `help`, `tail [error|access] [-n 10|20|50|100|500] [-f]`, `find <literal text>`, and `clear`. For example, `tail access -n 100 -f` resets filters and watches the access log, while `find /checkout` applies text search alongside the current filters. `find ""` clears text search only. `clear` clears displayed output without changing log files, saved search pages, or the live position; Refresh reloads saved lines. These are viewer actions, with no shell execution. Up/Down recall up to 50 commands in the current tab, preserving an unfinished draft; history disappears when the page reloads.
 
 **Watch live** appends new matching lines every five seconds and retains scrollback. Scrolling up stops following output while collection continues; the new-line button returns to the latest output. Pausing and resuming live updates preserves collected output. The browser retains up to 5,000 lines or roughly 2 million characters, whichever comes first; the footer identifies when older output is released. Search remains available for those older entries. Refreshing, changing filters or sources, or browsing pages starts a new view. Rotation or truncation pauses live reading with an explanation and retains the visible output until you refresh.
 

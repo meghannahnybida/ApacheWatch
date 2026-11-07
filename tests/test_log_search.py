@@ -34,6 +34,26 @@ class ConfiguredLogTestCase(unittest.TestCase):
 
 
 class LogSearchTests(ConfiguredLogTestCase):
+    def test_simplified_level_groups_keep_critical_and_trace_messages(self):
+        levels = ['emerg', 'alert', 'crit', 'error', 'warn', 'notice', 'info', 'debug',
+                  *(f'trace{n}' for n in range(1, 9)), 'unknown']
+        lines = {level: error(level=level) for level in levels}
+        self.error.write_text('\n'.join(lines.values()) + '\n')
+        groups = {'errors': levels[:4], 'warn': ['warn'], 'information': ['notice', 'info'],
+                  'diagnostics': ['debug', *(f'trace{n}' for n in range(1, 9))]}
+        for group, members in groups.items():
+            with self.subTest(group=group):
+                page = self.search(level=group, limit=2)
+                collected = page['lines']
+                while page['next_cursor']:
+                    page = self.search(level=group, limit=2, cursor=page['next_cursor'])
+                    collected = page['lines'] + collected
+                self.assertEqual(collected, [lines[level] for level in members])
+        self.assertEqual(self.search()['count'], len(levels))
+        # Exact API filters remain available for integrations.
+        self.assertEqual(self.search(level='crit')['lines'], [lines['crit']])
+        self.assertEqual(self.search(level='trace8')['lines'], [lines['trace8']])
+
     def test_search_finds_entries_beyond_the_old_tail_limits(self):
         old = access(path='/older-needle')
         self.access.write_text(old + '\n' + (access(path='/recent') + '\n') * 12000)
@@ -212,6 +232,13 @@ class TerminalLogTests(ConfiguredLogTestCase):
         self.assertEqual(received, lines)
         self.assertEqual(len(set(offsets)), len(lines))
         self.assertEqual(self.stream(cursor)['terminal_lines'], [])
+
+    def test_live_reads_use_the_same_grouped_levels_as_search(self):
+        page = self.search(level='diagnostics')
+        lines = [error(level=level) for level in ['error', 'debug', 'trace1', 'trace8', 'info']]
+        self.error.write_text('\n'.join(lines) + '\n')
+        result = self.stream(page['stream_cursor'], level='diagnostics')
+        self.assertEqual([line['raw'] for line in result['terminal_lines']], lines[1:4])
 
     def test_partial_line_is_updated_at_its_original_offset(self):
         self.error.write_bytes(b'first\npartial caf\xc3')

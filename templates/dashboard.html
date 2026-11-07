@@ -195,7 +195,8 @@
                         <div id="rawLogEntries" class="raw-log" hidden>
                             <div class="terminal-header"><span class="terminal-icon" aria-hidden="true">&gt;_</span><span id="terminalFile">error.log</span><button type="button" class="terminal-follow" id="terminalFollow" aria-pressed="true">Follow output</button></div>
                             <div class="terminal-command-line" aria-label="Current log view"><span class="terminal-prompt" aria-hidden="true">$</span><code id="terminalCommand">tail -n 20 -- error.log</code></div>
-                            <pre id="terminalOutput" class="terminal-output" tabindex="0" aria-label="Raw log output"></pre>
+                            <div id="terminalOutput" class="terminal-output" tabindex="0" role="region" aria-label="Raw log output"></div>
+                            <button type="button" class="terminal-jump" id="terminalJump" hidden>Jump to latest</button>
                             <p id="terminalMessage" class="raw-log-empty" role="status" hidden></p>
                             <div class="terminal-footer"><span class="terminal-state-dot" aria-hidden="true"></span><span id="terminalStatus" role="status">Loading…</span><span class="terminal-mode-label">Log viewer</span></div>
                         </div>
@@ -480,6 +481,7 @@
     <script src="{{ asset_url('js/action-notes.js') }}" defer></script>
     <script src="{{ asset_url('js/action-activity.js') }}" defer></script>
     <script src="{{ asset_url('js/log-search.js') }}" defer></script>
+    <script src="{{ asset_url('js/terminal.js') }}" defer></script>
     <script src="{{ asset_url('js/resource-details.js') }}" defer></script>
     <script src="{{ asset_url('js/dashboard.js') }}" defer></script>
     <script src="{{ asset_url('js/settings.js') }}" defer></script>

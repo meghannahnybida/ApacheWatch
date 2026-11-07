@@ -1,13 +1,17 @@
 let tailInterval = null;
+let tailGeneration = 0;
 const liveLogButton = document.getElementById('liveLogButton');
 const logEntries = document.getElementById('logEntries');
 const rawLogEntries = document.getElementById('rawLogEntries');
 const terminalOutput = document.getElementById('terminalOutput');
 const terminalMessage = document.getElementById('terminalMessage');
 const terminalFollow = document.getElementById('terminalFollow');
-let terminalFollowEnabled = true;
 let terminalError = '';
 let terminalFilename = 'error.log';
+const terminal = new window.ApacheWatchTerminal({
+    output: terminalOutput, follow: terminalFollow,
+    jump: document.getElementById('terminalJump'), status: document.getElementById('terminalStatus'),
+});
 const accessLogEntries = document.getElementById('accessLogEntries');
 const accessSummary = document.getElementById('accessSummary');
 const errorLogFilters = document.getElementById('errorLogFilters');
@@ -18,7 +22,6 @@ const logFilterFields = ['logFrom', 'logTo', 'logClientIP', 'logURL'].map(id => 
 const logErrorLevel = document.getElementById('logErrorLevel');
 let logSearchError = '';
 let currentLogs = []; // Incident groups currently loaded
-let currentRawLogs = [];
 let currentAccessLogs = [];
 let currentAccessSummary = {};
 let activeAccessStatus = 'all';
@@ -37,17 +40,25 @@ const logBrowser = new window.ApacheWatchLogSearch({
         status: activeLogSource === 'access' ? activeAccessStatus : 'all' }),
     onResult: data => {
         currentLogs = data.incidents || [];
-        currentRawLogs = data.lines || [];
         currentAccessLogs = (data.entries || []).filter(entry => entry.status != null);
         currentAccessSummary = data.summary || {};
         terminalFilename = data.filename;
         terminalError = logSearchError = '';
+        terminal.show(data, { terms: [logSearch.value.trim(), logFilterFields[3].value.trim(), logFilterFields[2].value.trim()],
+            filtered: hasLogFilters(), live: liveRefreshEnabled });
         renderActiveLogView();
     },
+    onStream: data => {
+        terminal.show(data, { append: true, live: liveRefreshEnabled });
+        filterAndDisplayRawLogs();
+        document.getElementById('logSearchStatus').textContent = data.has_more ? 'Catching up with new output…' : 'Watching for new lines · scroll up to read earlier output';
+    },
     onError: message => {
-        currentLogs = currentRawLogs = currentAccessLogs = [];
+        currentLogs = currentAccessLogs = [];
+        terminal.show({ terminal_lines: [] });
         currentAccessSummary = {};
         terminalError = logSearchError = message;
+        stopTailMode();
         renderActiveLogView();
     },
     onBrowse: () => stopTailMode(),
@@ -189,18 +200,6 @@ document.querySelectorAll('[data-log-format]').forEach(button => {
     });
 });
 
-terminalFollow.addEventListener('click', () => {
-    terminalFollowEnabled = !terminalFollowEnabled;
-    terminalFollow.setAttribute('aria-pressed', String(terminalFollowEnabled));
-    if (terminalFollowEnabled) terminalOutput.scrollTop = terminalOutput.scrollHeight;
-});
-terminalOutput.addEventListener('scroll', () => {
-    if (terminalFollowEnabled && terminalOutput.scrollHeight - terminalOutput.clientHeight - terminalOutput.scrollTop > 24) {
-        terminalFollowEnabled = false;
-        terminalFollow.setAttribute('aria-pressed', 'false');
-    }
-});
-
 document.querySelectorAll('[data-status-filter]').forEach(button => {
     button.addEventListener('click', () => {
         activeAccessStatus = button.dataset.statusFilter;
@@ -232,9 +231,9 @@ function setLogSource(source, refresh = true) {
     const nextSource = source === 'access' ? 'access' : 'error';
     if (nextSource !== activeLogSource) {
         logSearch.value = '';
-        currentLogs = currentRawLogs = currentAccessLogs = [];
+        currentLogs = currentAccessLogs = [];
+        terminal.show({ terminal_lines: [] });
         currentAccessSummary = {};
-        terminalOutput.textContent = '';
         terminalError = logSearchError = '';
     }
     terminalFilename = `${nextSource}.log`;
@@ -291,7 +290,7 @@ function setLogView(view) {
     accessSummary.hidden = activeLogView !== 'access';
     const helpText = {
         grouped: 'Repeated messages on this page are grouped together. Newest matches first.',
-        raw: 'Matching original lines, oldest to newest on this page. Watch live checks every 5 seconds.',
+        raw: 'Original lines, oldest to newest. Watch live appends output every 5 seconds; scroll up to read. Filter matches offer surrounding context.',
         access: 'Newest matching requests first. Expand a row for its referrer, protocol, and user agent.'
     };
     document.getElementById('logViewHelp').textContent = helpText[activeLogView];
@@ -300,6 +299,7 @@ function setLogView(view) {
     if (activeLogView === 'raw') {
         document.getElementById('terminalFile').textContent = terminalFilename;
         filterAndDisplayRawLogs();
+        if (terminal.following) terminal.setFollow(true);
     } else renderActiveLogView();
     if (limitChanged) fetchActiveLogData();
 }
@@ -315,19 +315,33 @@ function fetchActiveLogData() {
 }
 
 function startTailMode() {
+    const generation = ++tailGeneration;
     liveRefreshEnabled = true;
     localStorage.setItem('tailMode', 'true');
-    if (tailInterval) clearInterval(tailInterval);
-    fetchActiveLogData();
-    tailInterval = setInterval(() => { if (!logBrowser.loading) fetchActiveLogData(); }, 5000);
+    if (tailInterval) clearTimeout(tailInterval);
+    if (logBrowser.streamCursor && logBrowser.index === 0 && !logBrowser.loading) {
+        pollTail(generation);
+    } else {
+        fetchActiveLogData();
+        tailInterval = setTimeout(() => pollTail(generation), 5000);
+    }
     updateLiveLogButton();
 }
 
+async function pollTail(generation) {
+    if (!liveRefreshEnabled || generation !== tailGeneration) return;
+    const more = await logBrowser.poll();
+    if (liveRefreshEnabled && generation === tailGeneration) {
+        tailInterval = setTimeout(() => pollTail(generation), more ? 100 : 5000);
+    }
+}
+
 function stopTailMode() {
+    tailGeneration++;
     liveRefreshEnabled = false;
     localStorage.setItem('tailMode', 'false');
     if (tailInterval) {
-        clearInterval(tailInterval);
+        clearTimeout(tailInterval);
         tailInterval = null;
     }
     updateLiveLogButton();
@@ -377,13 +391,7 @@ function filterAndDisplayLogs() {
 
 function filterAndDisplayRawLogs() {
     const search = hasLogFilters();
-    const filtered = currentRawLogs;
-    const text = filtered.join('\n');
-    const scrollTop = terminalOutput.scrollTop;
-    // Preserve text selection and scroll position when a poll returns the same lines.
-    if (terminalOutput.textContent !== text) terminalOutput.textContent = text;
-    terminalOutput.hidden = filtered.length === 0;
-    terminalMessage.hidden = filtered.length > 0 && !terminalError;
+    terminalMessage.hidden = terminal.rows.size > 0 && !terminalError;
     terminalMessage.textContent = terminalError || (search ? 'No lines match these filters.' : 'No lines in this log yet.');
     terminalMessage.classList.toggle('raw-log-error', Boolean(terminalError));
     document.getElementById('terminalFile').textContent = terminalFilename;
@@ -391,8 +399,9 @@ function filterAndDisplayRawLogs() {
         ? `# ${search ? 'Search results' : 'Log history'} · page ${Math.max(1, logBrowser.index + 1)} · ${terminalFilename}`
         : `tail -n ${logLimit.value}${liveRefreshEnabled ? ' -f' : ''} -- ${terminalFilename}`;
     rawLogEntries.classList.toggle('watching', liveRefreshEnabled);
-    document.getElementById('terminalStatus').textContent = terminalError ? 'Unable to read log' : `${filtered.length} lines · ${liveRefreshEnabled ? 'Live · 5s' : 'Paused'}`;
-    terminalOutput.scrollTop = terminalFollowEnabled ? terminalOutput.scrollHeight : scrollTop;
+    terminal.live = liveRefreshEnabled;
+    terminal.updateStatus();
+    if (terminalError) document.getElementById('terminalStatus').textContent = 'Unable to read log';
 }
 
 function filterAndDisplayAccessLogs() {

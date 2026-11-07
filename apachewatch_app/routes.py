@@ -18,7 +18,7 @@ from .logs import _tail_file, group_error_incidents, parse_access_log, parse_err
 from .metrics import collect_metrics, collect_monitoring_health
 from .traffic import analyze_access_logs, analyze_block_recommendations
 from .settings import get_thresholds, save_thresholds
-from .log_search import LogChangedError, search_log
+from .log_search import LogChangedError, log_context, search_log, stream_log
 from .activity import get_action_activity
 from .resource_history import get_resource_history
 
@@ -166,6 +166,22 @@ def api_incidents():
 @web.route("/api/log-search")
 def api_log_search():
     """Search older entries in the configured log, with stable pages."""
+    return _configured_log_response(search_log)
+
+
+@web.route("/api/log-stream")
+def api_log_stream():
+    """Continue reading from the last live position."""
+    return _configured_log_response(stream_log)
+
+
+@web.route("/api/log-context")
+def api_log_context():
+    """Read original neighboring lines around a search match."""
+    return _configured_log_response(log_context)
+
+
+def _configured_log_response(reader):
     source = request.args.get('source', 'error')
     if source not in {'error', 'access'}:
         return jsonify({'error': 'source must be error or access'}), 400
@@ -173,7 +189,7 @@ def api_log_search():
     if not path:
         return jsonify({'error': f'No {source} log file is configured.'}), 503
     try:
-        return jsonify(search_log(path, source, request.args))
+        return jsonify(reader(path, source, request.args))
     except LogChangedError as error:
         return jsonify({'error': str(error)}), 409
     except ValueError as error:

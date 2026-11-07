@@ -87,6 +87,8 @@ web:
 - `GET /api/access-logs?limit=100` - Recent parsed access-log requests for interactive inspection
 - `GET /api/log-tail?source=error&limit=100` - Original recent error or access log lines in file order (up to 1,000 lines)
 - `GET /api/log-search?source=access&q=checkout&ip=192.0.2.10&status=5` - Search the configured log with optional text, IP, URL/path, date, error-level, and response-status filters; returns parsed entries, original lines, and an older-page cursor
+- `GET /api/log-stream?source=error&cursor=…` - Read new matching lines from a search's `stream_cursor`, with the same filters
+- `GET /api/log-context?source=error&snapshot=…&offset=…` - Read up to three original lines before and after a search result, ignoring filters
 - `GET /api/block-recommendations` - Advisory IP/range recommendations with evidence and proposed Apache/UFW rules
 - `GET /api/action-items?status=open` - Unified alert, recurring-error, and traffic-threat inbox
 - `PATCH /api/action-items/<id>` - Save a note, acknowledge, snooze, resolve, dismiss, or reopen a finding
@@ -175,9 +177,15 @@ Activity is stored in SQLite alongside each change, so the timeline and saved st
 
 Log Explorer searches the entire currently configured error or access log, including entries older than the initial Lines selection. **Filters** expands date/time, exact client IP (IPv4 or IPv6), and URL/path controls. Text and URL searches are literal and case-insensitive; all selected filters apply together. Error level and HTTP response filters also work in Terminal. Dates use the local times printed in the log, including both endpoints; lines without a readable timestamp are excluded when a date filter is set.
 
+Terminal highlights matching search text, URL text, and client IPs without changing the original log text. Filtered results have a **Context** button that expands up to three original lines before and after that match. Surrounding lines ignore the selected filters and stay within the search's file snapshot, so they may have different dates, IPs, or severity levels.
+
+**Watch live** appends new matching lines every five seconds and retains scrollback. Scrolling up stops following output while collection continues; the new-line button returns to the latest output. Pausing and resuming live updates preserves collected output. The browser retains up to 5,000 lines or roughly 2 million characters, whichever comes first; the footer identifies when older output is released. Search remains available for those older entries. Refreshing, changing filters or sources, or browsing pages starts a new view. Rotation or truncation pauses live reading with an explanation and retains the visible output until you refresh.
+
 **Older** and **Newer** navigate matching pages; repeated errors are grouped within each page. Terminal preserves original line text and shows that page in file order. Browsing history pauses live updates, while **Refresh** starts at the latest entries. Pages use a file snapshot so newly appended lines do not shift older pages. A rotated, truncated, or rewritten log prompts a refresh. Search covers the configured file; rotated archives such as `.log.1` and `.gz` are not included.
 
 The search API accepts `source`, `q`, `ip`, `url`, `from`, `to`, `level`, `status` (all, 2, 3, 4, or 5), `limit` (up to 500), and `cursor`. Dates are ISO local date/times without a timezone. Reuse `next_cursor` with the same filters to continue backwards. Each request scans at most roughly 8 MiB, stopping at a line boundary; the dashboard continues across empty batches automatically. `count` is the number of matches on that page, not a total for the file. Search limits individual lines to 1 MiB.
+
+Search also returns `terminal_lines` with byte offsets, a `snapshot` for context lookups, and a `stream_cursor` for forward reads. Streaming returns at most 500 matches per request within the same scan budget; continue immediately when `has_more` is true, including batches with no matches. Keep the same source and filters and use the returned `stream_cursor` for the next read. An unfinished last line is reread at the same offset on the next poll, allowing the viewer to update it without duplication.
 
 ### Generate Test Logs
 

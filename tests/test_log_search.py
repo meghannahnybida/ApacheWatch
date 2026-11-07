@@ -14,7 +14,7 @@ def error(message='URL /checkout failed', level='error', client='192.0.2.10:5432
     return f'[Tue Oct 20 {time} 2026] [core:{level}] [client {client}] {message}'
 
 
-class LogSearchTests(unittest.TestCase):
+class ConfiguredLogTestCase(unittest.TestCase):
     def setUp(self):
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
@@ -32,6 +32,8 @@ class LogSearchTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.get_json())
         return response.get_json()
 
+
+class LogSearchTests(ConfiguredLogTestCase):
     def test_search_finds_entries_beyond_the_old_tail_limits(self):
         old = access(path='/older-needle')
         self.access.write_text(old + '\n' + (access(path='/recent') + '\n') * 12000)
@@ -181,6 +183,119 @@ class LogSearchTests(unittest.TestCase):
             response = self.client.get('/api/log-search')
             self.assertEqual(response.status_code, 403)
             self.assertIn('permissions', response.get_json()['error'])
+
+
+class TerminalLogTests(ConfiguredLogTestCase):
+    def stream(self, cursor, source='error', **params):
+        response = self.client.get('/api/log-stream', query_string={'source': source, 'cursor': cursor, **params})
+        self.assertEqual(response.status_code, 200, response.get_json())
+        return response.get_json()
+
+    def context(self, page, offset, source='error'):
+        return self.client.get('/api/log-context', query_string={
+            'source': source, 'snapshot': page['snapshot'], 'offset': offset})
+
+    def test_live_bursts_preserve_duplicate_lines_and_drain_in_order(self):
+        self.error.write_text('initial\n')
+        cursor = self.search()['stream_cursor']
+        lines = ['same line'] * 1203
+        with self.error.open('a') as handle:
+            handle.write('\n'.join(lines) + '\n')
+        received, offsets = [], []
+        while True:
+            result = self.stream(cursor)
+            received.extend(line['raw'] for line in result['terminal_lines'])
+            offsets.extend(line['offset'] for line in result['terminal_lines'])
+            cursor = result['stream_cursor']
+            if not result['has_more']:
+                break
+        self.assertEqual(received, lines)
+        self.assertEqual(len(set(offsets)), len(lines))
+        self.assertEqual(self.stream(cursor)['terminal_lines'], [])
+
+    def test_partial_line_is_updated_at_its_original_offset(self):
+        self.error.write_bytes(b'first\npartial caf\xc3')
+        page = self.search()
+        offset = page['terminal_lines'][-1]['offset']
+        with self.error.open('ab') as handle:
+            handle.write(b'\xa9\r\n\nlast\n')
+        result = self.stream(page['stream_cursor'])
+        self.assertEqual(result['terminal_lines'], [
+            {'offset': offset, 'raw': 'partial café'},
+            {'offset': offset + len('partial café\r\n'.encode()), 'raw': ''},
+            {'offset': offset + len('partial café\r\n\n'.encode()), 'raw': 'last'},
+        ])
+        self.assertEqual(self.stream(result['stream_cursor'])['terminal_lines'], [])
+
+    def test_filtered_stream_advances_across_empty_bounded_batches(self):
+        page = self.search(q='needle')
+        with self.error.open('a') as handle:
+            handle.write('other\n' * 15 + 'needle\n')
+        cursor, matches, polls = page['stream_cursor'], [], 0
+        with patch('apachewatch_app.log_search.MAX_SCAN_BYTES', 20):
+            while True:
+                result = self.stream(cursor, q='needle')
+                matches.extend(line['raw'] for line in result['terminal_lines'])
+                cursor = result['stream_cursor']
+                polls += 1
+                if not result['has_more']:
+                    break
+        self.assertGreater(polls, 1)
+        self.assertEqual(matches, ['needle'])
+
+    def test_empty_access_log_stream_applies_intersecting_filters(self):
+        page = self.search('access', status='5', ip='192.0.2.10', url='/check')
+        wanted = access()
+        self.access.write_text('\n'.join([
+            access(ip='192.0.2.100'), access(status=404), access(path='/other'),
+            'unparsed', wanted,
+        ]) + '\n')
+        result = self.stream(page['stream_cursor'], 'access', status='5', ip='192.0.2.10', url='/check')
+        self.assertEqual([line['raw'] for line in result['terminal_lines']], [wanted])
+        self.assertFalse(result['has_more'])
+
+    def test_context_uses_snapshot_neighbors_ignoring_filters_and_later_appends(self):
+        lines = ['before 1', '', 'before café', 'needle <script>alert(1)</script>', 'after 1', 'after 2', 'after 3', 'after 4']
+        self.error.write_text('\r\n'.join(lines) + '\r\n')
+        page = self.search(q='needle')
+        with self.error.open('a') as handle:
+            handle.write('newly appended\n')
+        offset = page['terminal_lines'][0]['offset']
+        response = self.context(page, offset)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([line['raw'] for line in response.get_json()['lines']], lines[:7])
+        first = self.context(page, 0).get_json()['lines']
+        self.assertEqual([line['raw'] for line in first], lines[:4])
+        last_offset = len(('\r\n'.join(lines[:-1]) + '\r\n').encode())
+        last = self.context(page, last_offset).get_json()['lines']
+        self.assertEqual([line['raw'] for line in last], lines[-4:])
+
+    def test_live_and_context_reject_changed_files(self):
+        for operation in ('rotate', 'truncate', 'rewrite'):
+            with self.subTest(operation=operation):
+                self.error.write_text('first\nsecond\n')
+                page = self.search()
+                if operation == 'rotate':
+                    self.error.rename(self.root / 'previous.log')
+                    self.error.write_text('replacement\n')
+                elif operation == 'truncate':
+                    self.error.write_text('')
+                else:
+                    self.error.write_text('other\nsecond\n')
+                response = self.client.get('/api/log-stream', query_string={'cursor': page['stream_cursor']})
+                self.assertEqual(response.status_code, 409)
+                self.assertEqual(self.context(page, 0).status_code, 409)
+
+    def test_stream_and_context_validate_positions_sources_and_filters(self):
+        self.error.write_text('first\nsecond\n')
+        page = self.search()
+        for params in ({'cursor': 'garbage'}, {'cursor': 'W10'},
+                       {'cursor': page['stream_cursor'], 'q': 'different'},
+                       {'cursor': page['stream_cursor'], 'source': 'access'}):
+            self.assertEqual(self.client.get('/api/log-stream', query_string=params).status_code, 400)
+        for offset in (-1, 1, 1000, 'bad'):
+            self.assertEqual(self.context(page, offset).status_code, 400)
+        self.assertEqual(self.context(page, 0, 'access').status_code, 400)
 
 
 if __name__ == '__main__':

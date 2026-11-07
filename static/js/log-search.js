@@ -1,7 +1,7 @@
 // Search server-side pages without losing the selected snapshot or accepting stale responses.
 window.ApacheWatchLogSearch = class {
-    constructor({ getParams, onResult, onError, onBrowse }) {
-        Object.assign(this, { getParams, onResult, onError, onBrowse });
+    constructor({ getParams, onResult, onStream, onError, onBrowse }) {
+        Object.assign(this, { getParams, onResult, onStream, onError, onBrowse });
         this.pages = [];
         this.index = -1;
         this.loading = false;
@@ -58,10 +58,38 @@ window.ApacheWatchLogSearch = class {
 
     search() {
         this.abort();
+        this.streamCursor = null;
         this.pages = [];
         this.index = -1;
         this.params = this.getParams();
         return this.load();
+    }
+
+    async poll() {
+        if (this.loading || !this.streamCursor) return false;
+        this.loading = true;
+        this.controller = new AbortController();
+        const version = this.version;
+        try {
+            const params = new URLSearchParams({ ...this.params, cursor: this.streamCursor });
+            const response = await fetch(`/api/log-stream?${params}`, { signal: this.controller.signal });
+            const data = await response.json();
+            if (version !== this.version) return false;
+            if (!response.ok) throw new Error(data.error || 'Unable to read new log lines.');
+            this.streamCursor = data.stream_cursor;
+            this.onStream(data);
+            return data.has_more;
+        } catch (error) {
+            if (version !== this.version || error.name === 'AbortError') return false;
+            this.onBrowse();
+            this.status.textContent = `${error.message} Live updates paused; output retained.`;
+        } finally {
+            if (version === this.version) {
+                this.loading = false;
+                this.controls();
+            }
+        }
+        return false;
     }
 
     async load(cursor = '') {
@@ -108,6 +136,7 @@ window.ApacheWatchLogSearch = class {
 
     showPage() {
         const data = this.pages[this.index];
+        this.streamCursor = data.stream_cursor;
         this.onResult(data);
         const count = `${data.count} matching ${data.count === 1 ? 'line' : 'lines'}`;
         this.status.textContent = `${count} · Page ${this.index + 1}${data.next_cursor ? '' : ' · End of log'}`;

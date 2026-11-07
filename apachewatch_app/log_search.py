@@ -162,6 +162,130 @@ def _cursor(value):
         raise ValueError('Invalid search cursor. Refresh the search.') from None
 
 
+def _encode(data):
+    return base64.urlsafe_b64encode(json.dumps(data).encode()).decode().rstrip('=')
+
+
+def _fingerprint(source, filters):
+    return hashlib.sha256(json.dumps([source, filters], default=str, sort_keys=True).encode()).hexdigest()
+
+
+def _entry(raw, source):
+    entry = (parse_access_line(raw) if source == 'access' else parse_error_line(raw)) or {}
+    if source == 'error':
+        entry['ip'] = _client_ip(entry['message'])
+    return {**entry, 'raw': raw}
+
+
+def _snapshot(handle, source, end, filters, position=None):
+    stat = os.fstat(handle.fileno())
+    if position is None:
+        position = end
+        if end:
+            handle.seek(end - 1)
+            if handle.read(1) != b'\n':
+                # Re-read an unfinished line on the next poll; its offset stays stable.
+                position = next(_reverse_lines(handle, end))[0]
+    return {'source': source, 'file': [stat.st_dev, stat.st_ino], 'end': end,
+            'stamp': _stamp(handle, end), 'position': position, 'filters': filters}
+
+
+def _open_snapshot(handle, source, value):
+    try:
+        if not value or len(value) > 2048:
+            raise ValueError
+        data = json.loads(base64.urlsafe_b64decode(value + '=' * (-len(value) % 4)))
+        if (not isinstance(data, dict) or data.get('source') != source
+                or any(type(data.get(key)) is not int for key in ('end', 'position'))
+                or not 0 <= data['position'] <= data['end']):
+            raise ValueError
+    except (ValueError, TypeError, UnicodeError):
+        raise ValueError('Invalid log position. Refresh the search.') from None
+    stat = os.fstat(handle.fileno())
+    if (data.get('file') != [stat.st_dev, stat.st_ino] or data['end'] > stat.st_size
+            or data.get('stamp') != _stamp(handle, data['end'])):
+        raise LogChangedError('The log file changed. Refresh the search to start again.')
+    return data
+
+
+def _check_snapshot(path, handle, snapshot):
+    stat = os.stat(path)
+    if ([stat.st_dev, stat.st_ino] != snapshot['file']
+            or os.fstat(handle.fileno()).st_size < snapshot['end']
+            or _stamp(handle, snapshot['end']) != snapshot['stamp']):
+        raise LogChangedError('The log file changed. Refresh the search to start again.')
+
+
+def stream_log(path, source, params):
+    """Read forward from the last delivered offset, without skipping busy bursts."""
+    filters = _filters(params, source)
+    fingerprint = _fingerprint(source, filters)
+    records, incomplete = [], False
+    with open(path, 'rb') as handle:
+        previous = _open_snapshot(handle, source, params.get('cursor', ''))
+        if previous.get('filters') != fingerprint:
+            raise ValueError('Search filters changed. Refresh the search.')
+        end = os.fstat(handle.fileno()).st_size
+        snapshot = _snapshot(handle, source, end, fingerprint, position=previous['position'])
+        handle.seek(previous['position'])
+        start = position = previous['position']
+        while position < end:
+            line = handle.readline(min(MAX_LINE_BYTES + 2, end - position))
+            if len(line.removesuffix(b'\n').removesuffix(b'\r')) > MAX_LINE_BYTES:
+                raise OSError('A log line exceeds the search size limit.')
+            offset = position
+            position = handle.tell()
+            raw = line.removesuffix(b'\n').removesuffix(b'\r').decode('utf-8', errors='replace')
+            if _matches(_entry(raw, source), raw, filters, source):
+                records.append({'offset': offset, 'raw': raw})
+            if not line.endswith(b'\n'):
+                position = offset
+                incomplete = True
+                break
+            if len(records) >= 500 or position - start >= MAX_SCAN_BYTES:
+                break
+        snapshot['position'] = position
+        _check_snapshot(path, handle, snapshot)
+    return {'source': source, 'filename': Path(path).name, 'terminal_lines': records,
+            'stream_cursor': _encode(snapshot), 'snapshot': _encode(snapshot),
+            'has_more': position < end and not incomplete}
+
+
+def log_context(path, source, params):
+    """Return up to three original lines either side of one snapshot position."""
+    try:
+        offset = int(params.get('offset', ''))
+    except ValueError:
+        raise ValueError('Choose a valid log line.') from None
+    with open(path, 'rb') as handle:
+        snapshot = _open_snapshot(handle, source, params.get('snapshot', ''))
+        end = snapshot['end']
+        if not 0 <= offset < end:
+            raise ValueError('Choose a valid log line.')
+        if offset:
+            handle.seek(offset - 1)
+            if handle.read(1) != b'\n':
+                raise ValueError('Choose a valid log line.')
+        before = []
+        for start, line in _reverse_lines(handle, offset):
+            before.append({'offset': start, 'raw': line.decode('utf-8', errors='replace')})
+            if len(before) == 3:
+                break
+        records = list(reversed(before))
+        handle.seek(offset)
+        for _ in range(4):
+            start = handle.tell()
+            if start >= end:
+                break
+            line = handle.readline(min(MAX_LINE_BYTES + 2, end - start))
+            line = line.removesuffix(b'\n').removesuffix(b'\r')
+            if len(line) > MAX_LINE_BYTES:
+                raise OSError('A log line exceeds the search size limit.')
+            records.append({'offset': start, 'raw': line.decode('utf-8', errors='replace')})
+        _check_snapshot(path, handle, snapshot)
+    return {'lines': records, 'offset': offset}
+
+
 def search_log(path, source, params):
     """Read one page from a file snapshot, never loading the whole log."""
     if source not in {'error', 'access'}:
@@ -171,7 +295,7 @@ def search_log(path, source, params):
     except ValueError:
         raise ValueError('limit must be an integer') from None
     filters = _filters(params, source)
-    fingerprint = hashlib.sha256(json.dumps([source, filters], default=str, sort_keys=True).encode()).hexdigest()
+    fingerprint = _fingerprint(source, filters)
     cursor = _cursor(params['cursor']) if params.get('cursor') else None
     entries, scanned, offset = [], 0, 0
     with open(path, 'rb') as handle:
@@ -189,17 +313,15 @@ def search_log(path, source, params):
         for offset, line in _reverse_lines(handle, before):
             scanned += 1
             raw = line.decode('utf-8', errors='replace')
-            entry = parse_access_line(raw) if source == 'access' else parse_error_line(raw)
-            entry = entry or {}
-            if source == 'error':
-                entry['ip'] = _client_ip(entry['message'])
+            entry = _entry(raw, source)
             if _matches(entry, raw, filters, source):
-                entries.append({**entry, 'raw': raw})
+                entries.append({**entry, 'offset': offset})
             if len(entries) >= limit or before - offset >= MAX_SCAN_BYTES:
                 break
         # Detect rotation/truncation during the scan instead of mixing snapshots.
         if os.stat(path).st_ino != stat.st_ino or os.fstat(handle.fileno()).st_size < end or _stamp(handle, end) != stamp:
             raise LogChangedError('The log file changed. Refresh the search to start again.')
+        snapshot = _encode(_snapshot(handle, source, end, fingerprint))
     next_cursor = None
     if offset > 0:
         data = {'end': end, 'before': offset, 'file': identity, 'stamp': stamp, 'filters': fingerprint}
@@ -208,6 +330,8 @@ def search_log(path, source, params):
     return {
         'source': source, 'filename': Path(path).name, 'entries': entries,
         'lines': [entry['raw'] for entry in reversed(entries)],
+        'terminal_lines': [{'offset': entry['offset'], 'raw': entry['raw']} for entry in reversed(entries)],
+        'snapshot': snapshot, 'stream_cursor': snapshot,
         'incidents': group_error_incidents([entry for entry in reversed(entries) if entry.get('message')], limit=limit) if source == 'error' else [],
         'count': len(entries), 'scanned_lines': scanned, 'next_cursor': next_cursor,
         'summary': {'total': len(access), 'unique_ips': len({entry['ip'] for entry in access}),

@@ -151,6 +151,20 @@
                             <button type="button" class="log-view-tab" data-log-format="terminal" aria-pressed="false">Terminal</button>
                         </div>
                     </div>
+                    <div class="saved-log-views" id="savedLogViewsPanel" aria-label="Saved log views">
+                        <div class="saved-log-toolbar">
+                            <label for="savedLogViewSelect" id="savedLogViewPicker" hidden>Saved views<select id="savedLogViewSelect" disabled><option value="" disabled hidden>Choose a saved view</option></select></label>
+                            <button type="button" class="secondary-button" id="saveLogView" disabled>Save current view</button>
+                            <button type="button" class="text-button" id="editLogView" disabled hidden>Edit view</button>
+                            <div class="saved-log-feedback"><p id="savedLogViewStatus" role="status" aria-live="polite">Loading saved views…</p><button type="button" class="text-button" id="retryLogViews" hidden>Reload saved views</button></div>
+                        </div>
+                        <form id="savedLogViewForm" class="saved-log-form" hidden>
+                            <label for="savedLogViewName">View name<input id="savedLogViewName" type="text" maxlength="80" required placeholder="e.g. Checkout errors" autocomplete="off"></label>
+                            <p>Save the current source, filters, dates, display, and line count. Views reopen paused.</p>
+                            <div class="saved-log-form-actions"><button type="submit" class="primary-button" id="submitLogView">Save view</button><button type="button" class="secondary-button" id="cancelLogView">Cancel</button><button type="button" class="text-button" id="deleteLogView" hidden>Delete view</button></div>
+                            <div class="saved-log-delete" id="confirmDeleteLogView" hidden><p id="deleteLogViewPrompt"></p><button type="button" class="secondary-button" id="removeLogView">Delete saved view</button><button type="button" class="text-button" id="keepLogView">Keep view</button></div>
+                        </form>
+                    </div>
                     <div class="log-control-bar">
                         <div class="log-toolbar">
                             <label class="search-field" for="logSearch"><span class="sr-only">Search log</span><input type="search" id="logSearch" placeholder="Search log" maxlength="1000"></label>
@@ -501,6 +515,7 @@
     <script src="{{ asset_url('js/log-search.js') }}" defer></script>
     <script src="{{ asset_url('js/terminal.js') }}" defer></script>
     <script src="{{ asset_url('js/terminal-tools.js') }}" defer></script>
+    <script src="{{ asset_url('js/log-views.js') }}" defer></script>
     <script src="{{ asset_url('js/resource-details.js') }}" defer></script>
     <script src="{{ asset_url('js/dashboard.js') }}" defer></script>
     <script src="{{ asset_url('js/settings.js') }}" defer></script>

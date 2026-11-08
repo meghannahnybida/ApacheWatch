@@ -197,6 +197,21 @@ h2 { color: var(--ink); font-size: 16px; font-weight: 650; letter-spacing: -.015
 .log-source-button, .log-view-tab { padding: 7px 12px; border: 0; border-radius: 5px; background: transparent; color: var(--muted); font-size: 12px; font-weight: 550; }
 .log-source-button.active, .log-view-tab.active { background: var(--surface); color: var(--ink); box-shadow: 0 1px 3px #1c293d15; }
 .log-control-bar { margin-bottom: 14px; }
+.saved-log-views { margin-bottom: 18px; padding-bottom: 14px; border-bottom: 1px solid var(--line); }
+.saved-log-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 14px; }
+.saved-log-toolbar label { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 220px; color: var(--muted); font-size: 12px; }
+.saved-log-toolbar select { flex: 1; min-width: 0; width: 100%; max-width: 360px; min-height: 36px; padding: 7px 9px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); font: inherit; }
+.saved-log-feedback { display: flex; align-items: baseline; flex-wrap: wrap; flex-basis: 100%; gap: 8px 14px; }
+.saved-log-views.is-empty .saved-log-feedback { flex: 1; min-width: 180px; }
+.saved-log-feedback p { color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
+.saved-log-feedback p.is-error { color: var(--danger); }
+.saved-log-form { display: grid; gap: 10px; margin-top: 12px; padding: 14px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-subtle); }
+.saved-log-form label { display: grid; gap: 6px; max-width: 440px; color: var(--ink); font-size: 12px; }
+.saved-log-form input { min-width: 0; width: 100%; min-height: 38px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); font: inherit; }
+.saved-log-form p { color: var(--muted); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+.saved-log-form-actions, .saved-log-delete { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+.saved-log-delete { padding-top: 12px; border-top: 1px solid var(--line); }
+.saved-log-delete p { flex-basis: 100%; color: var(--ink); }
 .log-search-filters { margin-bottom: 14px; }
 .log-search-filters > summary { display: flex; align-items: center; gap: 6px; width: fit-content; color: var(--muted); font-size: 12px; cursor: pointer; }
 #logFilterCount { margin-left: 4px; padding: 2px 6px; border-radius: 4px; background: var(--accent-soft); color: var(--accent-text); font-size: 10px; }

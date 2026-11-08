@@ -2,6 +2,7 @@
 
 from datetime import datetime
 from pathlib import Path
+import sqlite3
 from flask import Blueprint, current_app, jsonify, render_template, request
 import notifications
 
@@ -19,6 +20,7 @@ from .metrics import collect_metrics, collect_monitoring_health
 from .traffic import analyze_access_logs, analyze_block_recommendations
 from .settings import get_thresholds, save_thresholds
 from .log_search import LogChangedError, log_context, search_log, stream_log
+from .log_views import LogViewConflict, delete_log_view, get_log_views, save_log_view
 from .activity import get_action_activity
 from .resource_history import get_resource_history
 
@@ -167,6 +169,30 @@ def api_incidents():
 def api_log_search():
     """Search older entries in the configured log, with stable pages."""
     return _configured_log_response(search_log)
+
+
+@web.route('/api/log-views', methods=['GET', 'POST'])
+@web.route('/api/log-views/<int:view_id>', methods=['PATCH', 'DELETE'])
+def api_log_views(view_id=None):
+    """Manage named filters for this server, without reading or changing log files."""
+    database = current_app.config['APACHEWATCH']['database']
+    try:
+        if request.method == 'GET':
+            return jsonify({'views': get_log_views(database)})
+        if request.method == 'DELETE':
+            delete_log_view(database, view_id)
+            return '', 204
+        payload = request.get_json(silent=True)
+        view = save_log_view(database, payload, view_id)
+        return jsonify({'view': view}), 201 if request.method == 'POST' else 200
+    except LogViewConflict as error:
+        return jsonify({'error': str(error)}), 409
+    except ValueError as error:
+        return jsonify({'error': str(error)}), 400
+    except LookupError as error:
+        return jsonify({'error': str(error)}), 404
+    except (sqlite3.Error, OSError):
+        return jsonify({'error': 'Unable to access saved views. Try again.'}), 503
 
 
 @web.route("/api/log-stream")

@@ -6,6 +6,7 @@ from datetime import datetime
 from pathlib import Path
 import notifications
 from .activity import record_activity
+from .log_views import SCHEMA as LOG_VIEWS_SCHEMA
 
 
 def init_database(db_path):
@@ -16,6 +17,7 @@ def init_database(db_path):
     with closing(sqlite3.connect(db_path)) as conn, conn:
         cursor = conn.cursor()
         cursor.execute('BEGIN IMMEDIATE')
+        cursor.execute(LOG_VIEWS_SCHEMA)
 
         # Create metrics table
         cursor.execute('''

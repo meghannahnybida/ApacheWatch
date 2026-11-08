@@ -96,6 +96,44 @@ const terminalTools = new window.ApacheWatchTerminalTools({
         filterAndDisplayRawLogs();
     },
 });
+const savedLogViews = new window.ApacheWatchSavedLogViews({
+    getState: getLogViewState,
+    applyState: applyLogViewState,
+});
+
+function getLogViewState() {
+    const state = { ...logBrowser.getParams(), format: activeLogFormat, limit: Number(logLimit.value) };
+    for (const key of ['q', 'ip', 'url', 'from', 'to', 'level', 'status']) state[key] = state[key].trim();
+    return state;
+}
+
+function applyLogViewState(state) {
+    stopTailMode();
+    logBrowser.abort();
+    clearLogFilters();
+    setLogSource(state.source, false);
+    setLogView(state.format === 'terminal' ? 'raw' : state.source === 'access' ? 'access' : 'grouped', false);
+    logLimit.value = String(state.limit);
+    localStorage.setItem('logLimit', logLimit.value);
+    logSearch.value = state.q;
+    ['from', 'to', 'ip', 'url'].forEach((key, index) => { logFilterFields[index].value = state[key]; });
+    activeErrorLevel = state.level;
+    activeAccessStatus = state.status;
+    syncErrorLevelControl();
+    document.querySelectorAll('[data-status-filter]').forEach(button => {
+        const active = button.dataset.statusFilter === activeAccessStatus;
+        button.classList.toggle('active', active);
+        button.setAttribute('aria-pressed', String(active));
+    });
+    document.getElementById('logSearchFilters').open = logFilterFields.some(field => field.value);
+    const url = new URL(window.location.href);
+    if (activeLogSource === 'error' && activeErrorLevel) url.searchParams.set('level', activeErrorLevel);
+    else url.searchParams.delete('level');
+    window.history.replaceState(null, '', url);
+    terminal.setFollow(true);
+    updateLogFilterCount();
+    fetchActiveLogData();
+}
 
 function readJSON(response) {
     if (!response.ok) throw new Error(`Request failed (${response.status})`);
@@ -174,6 +212,7 @@ liveLogButton.addEventListener('click', function() {
 
 logLimit.addEventListener('change', function() {
     localStorage.setItem('logLimit', this.value);
+    savedLogViews.sync();
     fetchActiveLogData();
 });
 
@@ -200,6 +239,7 @@ function updateLogFilterCount() {
     document.getElementById('logFilterCount').textContent = count;
     document.getElementById('clearLogSearch').hidden = !hasLogFilters();
     terminalTools.syncSearch(logSearch.value);
+    savedLogViews.sync();
 }
 
 function hasLogFilters() {
@@ -279,7 +319,7 @@ function setLogSource(source, refresh = true) {
         button.classList.toggle('active', active);
         button.setAttribute('aria-pressed', String(active));
     });
-    setLogView(activeLogFormat === 'terminal' || liveRefreshEnabled ? 'raw' : activeLogSource === 'access' ? 'access' : 'grouped');
+    setLogView(activeLogFormat === 'terminal' || liveRefreshEnabled ? 'raw' : activeLogSource === 'access' ? 'access' : 'grouped', false);
     updateLogFilterCount();
     if (refresh) fetchActiveLogData();
 }
@@ -303,7 +343,7 @@ function openLogExplorer(source, query = '', statusFamily = 'all') {
     fetchActiveLogData();
 }
 
-function setLogView(view) {
+function setLogView(view, refresh = true) {
     activeLogView = view === 'raw' ? 'raw' : activeLogSource === 'access' ? 'access' : 'grouped';
     activeLogFormat = activeLogView === 'raw' ? 'terminal' : 'formatted';
     localStorage.setItem('logFormat', activeLogFormat);
@@ -336,7 +376,8 @@ function setLogView(view) {
         filterAndDisplayRawLogs();
         if (terminal.following) terminal.setFollow(true);
     } else renderActiveLogView();
-    if (limitChanged) fetchActiveLogData();
+    savedLogViews.sync();
+    if (limitChanged && refresh) fetchActiveLogData();
 }
 
 function renderActiveLogView() {

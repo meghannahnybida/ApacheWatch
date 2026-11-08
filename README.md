@@ -89,6 +89,10 @@ web:
 - `GET /api/log-search?source=access&q=checkout&ip=192.0.2.10&status=5` - Search the configured log with optional text, IP, URL/path, date, error-level, and response-status filters; returns parsed entries, original lines, and an older-page cursor
 - `GET /api/log-stream?source=error&cursor=…` - Read new matching lines from a search's `stream_cursor`, with the same filters
 - `GET /api/log-context?source=error&snapshot=…&offset=…` - Read up to three original lines before and after a search result, ignoring filters
+- `GET /api/log-views` - List this server's saved log views
+- `POST /api/log-views` - Save a named view with `{ "name": "Checkout errors", "state": { ... } }`
+- `PATCH /api/log-views/<id>` - Replace a saved view's name and state
+- `DELETE /api/log-views/<id>` - Delete a saved view
 - `GET /api/block-recommendations` - Advisory IP/range recommendations with evidence and proposed Apache/UFW rules
 - `GET /api/action-items?status=open` - Unified alert, recurring-error, and traffic-threat inbox
 - `PATCH /api/action-items/<id>` - Save a note, acknowledge, snooze, resolve, dismiss, or reopen a finding
@@ -125,6 +129,7 @@ ApacheWatch/
 │   ├── resource_history.py # Time-filtered resource charts and summaries
 │   ├── logs.py         # Log parsing and error grouping
 │   ├── log_search.py   # Filtered log search and snapshot pagination
+│   ├── log_views.py    # Named, persistent log views
 │   ├── traffic.py      # Traffic analytics and security findings
 │   ├── alerts.py       # Threshold rules
 │   ├── settings.py     # Persistent threshold overrides
@@ -179,6 +184,12 @@ Activity is stored in SQLite alongside each change, so the timeline and saved st
 Log Explorer searches the entire currently configured error or access log, including entries older than the initial Lines selection. **Filters** expands date/time, exact client IP (IPv4 or IPv6), and URL/path controls. Text and URL searches are literal and case-insensitive; all selected filters apply together. Error level and HTTP response filters also work in Terminal. Dates use the local times printed in the log, including both endpoints; lines without a readable timestamp are excluded when a date filter is set.
 
 The Level dropdown has five choices: **All levels**, **Errors** (including critical, alert, and emergency), **Warnings**, **Info** (including notice), and **Debug** (including trace 1–8). All levels also includes unrecognized lines. Exact Apache levels remain available through the search API.
+
+Choose **Save current view** to name the current log source, text/IP/path/date filters, severity or HTTP response filter, display format, and line count. **Saved views** reopens a view in one selection, cancels pending reads, and starts a fresh search with live updates paused. Dates are saved exactly as entered, rather than as a moving time range; saved views contain filters, not a copy of the log output.
+
+Changing filters shows that they differ from the selected view and leaves the saved version intact. **Edit view** lets you rename it or update it with the current settings. Its **Delete view** action removes only the saved view and leaves the current filters open. Views are shared on this server, stored in SQLite, and survive browser reloads and app restarts. Names must be unique ignoring case, with up to 80 characters and 50 views per server. Failed saves retain the name draft for retry.
+
+The saved-view API accepts a `name` and a `state` object with `source` (`error` or `access`), `format` (`formatted` or `terminal`), `limit` (10, 20, 50, 100, or 500; Formatted supports up to 100), and the search fields `q`, `ip`, `url`, `from`, `to`, `level`, and `status`. Level uses the viewer's groups (`errors`, `warn`, `information`, `diagnostics`, or empty). Irrelevant source-specific filters must be neutral: error views use `status: "all"`; access views use `level: ""`. Unknown fields, live flags, file paths, and pagination cursors are rejected.
 
 Terminal highlights matching search text, URL text, and client IPs without changing the original log text. Filtered results have a **Context** button that expands up to three original lines before and after that match. Surrounding lines ignore the selected filters and stay within the search's file snapshot, so they may have different dates, IPs, or severity levels.
 
